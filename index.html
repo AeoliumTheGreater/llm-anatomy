@@ -4,25 +4,45 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>LLM Anatomy</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="styles.css">
   <script type="module" src="src/main.js"></script>
 </head>
 <body>
   <!-- top bar: title, preset toggle, edit controls -->
   <header class="topbar">
-    <h1>LLM Anatomy</h1>
-    <nav class="presets" aria-label="Presets"></nav>
-    <div class="actions"></div>
+    <h1 class="title">LLM Anatomy</h1>
+    <div class="presets" role="group" aria-label="Model preset"></div>
+    <span class="badge" hidden>Edited</span>
+    <div class="actions">
+      <button type="button" data-action="undo" aria-keyshortcuts="Control+Z">Undo</button>
+      <button type="button" data-action="redo" aria-keyshortcuts="Control+Shift+Z">Redo</button>
+      <button type="button" data-action="reset">Reset</button>
+      <button type="button" data-action="import">Import</button>
+      <button type="button" data-action="export">Export</button>
+      <button type="button" data-action="compare" aria-expanded="false" aria-controls="diffpanel">Compare</button>
+      <button type="button" data-action="theme">Theme: system</button>
+      <input class="import-input" type="file" accept=".json,application/json" hidden>
+    </div>
   </header>
 
   <!-- palette, canvas and inspector -->
   <main class="workspace">
     <aside class="palette" aria-label="Block palette"></aside>
-    <svg class="canvas" role="application" aria-label="Model graph"></svg>
+    <div class="canvas-wrap">
+      <svg class="canvas" role="application" aria-roledescription="graph editor"
+           aria-label="Model graph. Tab moves between blocks; Enter inspects a block."></svg>
+      <div class="zoom-controls">
+        <button type="button" data-zoom="in" aria-label="Zoom in">+</button>
+        <button type="button" data-zoom="out" aria-label="Zoom out">−</button>
+        <button type="button" data-zoom="fit">Fit</button>
+      </div>
+      <p class="status" role="status" aria-live="polite" hidden></p>
+    </div>
     <aside class="inspector" aria-label="Inspector"></aside>
   </main>
 
   <!-- difference panel -->
-  <section class="diffpanel" aria-label="Differences" hidden></section>
+  <section id="diffpanel" class="diffpanel" aria-label="Differences" hidden></section>
 </body>
 </html>

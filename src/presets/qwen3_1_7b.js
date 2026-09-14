@@ -1,4 +1,4 @@
-import { decoderLayer, inputBlocks, outputBlocks, LAYER_HEIGHT } from "./layer.js";
+import { decoderLayer, inputBlocks, outputBlocks } from "./layer.js";
 
 // values from https://huggingface.co/Qwen/Qwen3-1.7B/blob/main/config.json
 const d = 2048;
@@ -21,10 +21,10 @@ const layer = decoderLayer({
   },
   d,
   dff,
-  top: 100,
+  index: 0,
   input: input.output,
 });
-const output = outputBlocks({ V, d, top: 100 + LAYER_HEIGHT + 20, input: layer.output });
+const output = outputBlocks({ V, d, layerCount: 1, input: layer.output });
 
 export const PRESET = {
   id: "qwen3_1_7b",

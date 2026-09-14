@@ -1,12 +1,15 @@
 // the residual stream runs down the left column and each sub-layer's branch down the right
-export const STREAM_X = 0;
-export const BRANCH_X = 240;
-export const LAYER_HEIGHT = 480;
+const STREAM_X = 0;
+const BRANCH_X = 260;
+const FIRST_LAYER_Y = 140;
+const LAYER_HEIGHT = 480;
+const OUTPUT_GAP = 60;
 
-/** Builds one pre-norm decoder layer: norm, mixer, add, norm, SwiGLU MLP, add. */
-export function decoderLayer({ prefix, group, mixer, d, dff, top, input }) {
+/** Builds the pre-norm decoder layer at a position in the stack: norm, mixer, add, norm, SwiGLU MLP, add. */
+export function decoderLayer({ prefix, group, mixer, d, dff, index, input }) {
   const id = (name) => `${prefix}.${name}`;
   const mixerId = id(mixer.id);
+  const top = FIRST_LAYER_Y + index * LAYER_HEIGHT;
 
   // lays the blocks out top to bottom
   const nodes = [
@@ -39,8 +42,9 @@ export function inputBlocks({ V, d }) {
   return { nodes, output: { node: "embed", port: "x" } };
 }
 
-/** Builds the final norm, output layer and sampling below the last layer. */
-export function outputBlocks({ V, d, top, input }) {
+/** Builds the final norm, output layer and sampling below the given number of layers. */
+export function outputBlocks({ V, d, layerCount, input }) {
+  const top = FIRST_LAYER_Y + layerCount * LAYER_HEIGHT + OUTPUT_GAP;
   const nodes = [
     makeNode("finalNorm", "rmsNorm", { d }, STREAM_X, top, null),
     makeNode("lmHead", "lmHead", { d, V, tied: true }, STREAM_X, top + 80, null),

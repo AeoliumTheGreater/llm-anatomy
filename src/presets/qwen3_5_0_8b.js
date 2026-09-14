@@ -1,4 +1,4 @@
-import { decoderLayer, inputBlocks, outputBlocks, LAYER_HEIGHT } from "./layer.js";
+import { decoderLayer, inputBlocks, outputBlocks } from "./layer.js";
 
 // values from the text_config in https://huggingface.co/Qwen/Qwen3.5-0.8B/blob/main/config.json
 const d = 1024;
@@ -30,14 +30,14 @@ for (let i = 0; i < fullAttentionInterval; i += 1) {
       : { id: "deltanet", type: "gatedDeltaNet", params: deltaNetParams },
     d,
     dff,
-    top: 100 + i * LAYER_HEIGHT,
+    index: i,
     input: previous,
   });
   nodes.push(...layer.nodes);
   edges.push(...layer.edges);
   previous = layer.output;
 }
-const output = outputBlocks({ V, d, top: 100 + fullAttentionInterval * LAYER_HEIGHT + 20, input: previous });
+const output = outputBlocks({ V, d, layerCount: fullAttentionInterval, input: previous });
 
 export const PRESET = {
   id: "qwen3_5_0_8b",
