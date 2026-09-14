@@ -142,6 +142,19 @@ export function renderCanvas(root, model) {
   return layers;
 }
 
+/** Moves the dragged node and refreshes group frames without rebuilding the other nodes. */
+export function renderDrag(root, model) {
+  const layers = ensureLayers(root);
+  drawGroupFrames(layers.groups, model);
+  const item = model.layout.nodes.get(model.dragId);
+  const el = layers.nodes.querySelector(`[data-key="${CSS.escape(`node:${model.dragId}`)}"]`);
+  if (item && el) {
+    el.style.transform = `translate(${item.x}px, ${item.y}px)`;
+    el.classList.add("is-dragging");
+  }
+  return layers;
+}
+
 /** Draws the frames of expanded groups behind their nodes. */
 function drawGroupFrames(layer, { layout, selection }) {
   layer.replaceChildren();

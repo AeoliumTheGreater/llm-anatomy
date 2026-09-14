@@ -10,7 +10,7 @@ import {
 import { PRESET as QWEN2_5 } from "./presets/qwen2_5_0_5b.js";
 import { PRESET as QWEN3 } from "./presets/qwen3_1_7b.js";
 import { PRESET as QWEN3_5 } from "./presets/qwen3_5_0_8b.js";
-import { layoutGraph, renderCanvas, fitToView, portPoint, GRID, NODE_W, NODE_H } from "./view/canvas.js";
+import { layoutGraph, renderCanvas, renderDrag, fitToView, portPoint, GRID, NODE_W, NODE_H } from "./view/canvas.js";
 import { renderEdges, renderPendingEdge } from "./view/edges.js";
 import { renderInspector } from "./view/inspector.js";
 import { renderPalette, BLOCK_MIME } from "./view/palette.js";
@@ -61,6 +61,7 @@ const state = {
   lastTap: null,
   layout: null,
   layers: null,
+  invalid: new Set(),
   statusTimer: 0,
   animationTimer: 0,
 };
@@ -223,13 +224,22 @@ function renderGraph({ animate = false } = {}) {
     warnings: new Set([...missing.map((m) => m.node), ...invalid.map((p) => p.edge.to.node)]),
     missing: new Set(missing.map((m) => `${m.node}:${m.port}`)),
   });
-  renderEdges(state.layers.edges, { graph, layout: state.layout, selection: state.selection, invalid: new Set(invalid.map((p) => p.index)) });
+  state.invalid = new Set(invalid.map((p) => p.index));
+  renderEdges(state.layers.edges, { graph, layout: state.layout, selection: state.selection, invalid: state.invalid });
   applyView();
 
   // restores focus when the focused element was rebuilt
   if (focusKey && document.activeElement?.dataset?.key !== focusKey) {
     dom.svg.querySelector(`[data-key="${CSS.escape(focusKey)}"]`)?.focus({ preventScroll: true });
   }
+}
+
+/** Redraws only what a drag changes: the dragged node, group frames and edges. */
+function renderDragFrame() {
+  const graph = currentGraph();
+  state.layout = layoutGraph(graph, { collapsed: collapsedFor(), expanded: state.expanded, drag: state.drag });
+  state.layers = renderDrag(dom.svg, { layout: state.layout, selection: state.selection, dragId: state.drag.id });
+  renderEdges(state.layers.edges, { graph, layout: state.layout, selection: state.selection, invalid: state.invalid });
 }
 
 /** Redraws the inspector and the difference panel. */
@@ -468,7 +478,7 @@ function onPointerMove(event) {
       id: it.id,
       position: { x: snap(it.origin.x + dx / state.view.scale), y: snap(it.origin.y + dy / state.view.scale) },
     };
-    renderGraph();
+    renderDragFrame();
     return;
   }
 
