@@ -12,7 +12,7 @@ import { PRESET as QWEN2_5 } from "./presets/qwen2_5_0_5b.js";
 import { PRESET as QWEN3 } from "./presets/qwen3_1_7b.js";
 import { PRESET as QWEN3_5 } from "./presets/qwen3_5_0_8b.js";
 import {
-  layoutGraph, layoutInternals, renderCanvas, renderInternals, renderDrag, fitToView, homeView, portPoint,
+  layoutGraph, layoutInternals, renderCanvas, renderInternals, renderDrag, fitToView, portPoint,
   GRID, NODE_W, NODE_H,
 } from "./view/canvas.js";
 import { renderEdges, renderPendingEdge, updateEdgesFor } from "./view/edges.js";
@@ -213,10 +213,10 @@ function goToLevel(index) {
   afterDrillChange();
 }
 
-/** Redraws after moving between levels and opens the new picture at full size. */
+/** Redraws after moving between levels and fits the whole new row on screen. */
 function afterDrillChange() {
   render();
-  requestAnimationFrame(home);
+  requestAnimationFrame(fit);
 }
 
 /** Redraws everything. */
@@ -374,6 +374,7 @@ function toggleGroup(groupId) {
   collapsedFor().set(groupId, !isCollapsed(groupId));
   renderGraph();
   renderSidePanels();
+  fit();
 }
 
 /** Switches to another preset, keeping the view so shared blocks stay in place. */
@@ -385,6 +386,7 @@ function selectPreset(id) {
   state.drill = [];
   saveSetting(storage, "preset", id);
   render({ animate: true });
+  requestAnimationFrame(fit);
 }
 
 /** Applies the pan and zoom to the canvas and its grid. */
@@ -458,13 +460,6 @@ function zoomCentre(factor) {
 function fit() {
   const rect = dom.svg.getBoundingClientRect();
   state.view = fitToView(state.layout, rect.width, rect.height);
-  applyView();
-}
-
-/** Opens a diagram at full size, at the start of the stream. */
-function home() {
-  const rect = dom.svg.getBoundingClientRect();
-  state.view = homeView(state.layout, rect.width, rect.height);
   applyView();
 }
 
@@ -804,7 +799,7 @@ async function onImportFile() {
   state.selection = null;
   state.drill = [];
   setHistory(commit(currentHistory(), { ...graph, basePreset: graph.basePreset ?? state.presetId }));
-  home();
+  fit();
   showStatus(`Imported ${graph.name}.`);
 }
 
@@ -855,11 +850,11 @@ function init() {
 
   wideQuery.addEventListener("change", () => {
     render();
-    requestAnimationFrame(home);
+    requestAnimationFrame(fit);
   });
 
   render();
-  requestAnimationFrame(home);
+  requestAnimationFrame(fit);
 }
 
 init();

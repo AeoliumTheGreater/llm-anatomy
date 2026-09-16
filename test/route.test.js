@@ -101,11 +101,27 @@ test("every internal graph is drawn without crossings", () => {
   }
 });
 
-test("side inputs sit in the column just before the step they feed", () => {
+test("every internal graph sits on one row, each step after its inputs", () => {
+  const params = {
+    ...QWEN3_5.nodes.find((n) => n.type === "attention").params,
+    ...QWEN3_5.nodes.find((n) => n.type === "gatedDeltaNet").params,
+  };
+  for (const key of Object.keys(INTERNALS)) {
+    const entry = internalsFor(key, params);
+    const layout = layoutInternals(entry, params, QWEN3_5.globals);
+    const rows = new Set([...layout.nodes.values()].map((item) => item.y));
+    assert.equal(rows.size, 1, `${key} uses more than one row`);
+    for (const [from, to] of entry.edges) {
+      assert.ok(layout.nodes.get(from).x < layout.nodes.get(to).x, `${key}: ${from} comes before ${to}`);
+    }
+  }
+});
+
+test("a side input sits just before the step it feeds", () => {
   const params = QWEN3_5.nodes.find((n) => n.type === "gatedDeltaNet").params;
   const layout = layoutInternals(internalsFor("gatedDeltaNet", params), params, QWEN3_5.globals);
   const at = (id) => layout.nodes.get(id);
-  assert.equal(at("gates").x, at("norm").x);
-  assert.ok(at("gates").x < at("state").x);
-  assert.equal(at("state").y, at("norm").y, "the main chain stays on one line");
+  const pitch = at("conv").x - at("inProj").x;
+  assert.equal(at("state").x - at("gates").x, pitch);
+  assert.ok(at("norm").x < at("gates").x);
 });

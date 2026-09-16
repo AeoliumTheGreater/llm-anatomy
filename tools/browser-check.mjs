@@ -77,6 +77,16 @@ const dragPoints = async (from, to) => {
   await mouse("mouseReleased", to.x, to.y, 0);
   await sleep(200);
 };
+// page expressions for layout checks
+const stepsOnOneRow = "new Set([...document.querySelectorAll('.node.is-step .node-body')].map((b) => Math.round(b.getBoundingClientRect().top))).size === 1";
+const allInsideCanvas = (selector) => `(() => {
+  const canvas = document.querySelector('.canvas').getBoundingClientRect();
+  return [...document.querySelectorAll('${selector}')].every((el) => {
+    const r = el.getBoundingClientRect();
+    return r.left >= canvas.left - 1 && r.right <= canvas.right + 1;
+  });
+})()`;
+
 // focusing brings a block into view, which matters on a diagram wider than the canvas
 const focusItem = async (key) => {
   await evaluate(`document.querySelector('[data-key="${key}"]')?.focus()`);
@@ -132,6 +142,7 @@ await step("the model reads left to right", async () => {
   const sampling = await rect('[data-key="node:sampling"]');
   check("the stream runs left to right", embed.x < group.x && group.x < sampling.x, `${Math.round(embed.x)} < ${Math.round(group.x)} < ${Math.round(sampling.x)}`);
   check("blocks stay on one line", Math.abs(embed.cy - sampling.cy) < 4, `${Math.round(embed.cy)} vs ${Math.round(sampling.cy)}`);
+  check("the whole model fits on screen when it opens", await evaluate(allInsideCanvas(".layer-nodes > [data-key]")));
   check("every connection has an arrowhead", (await count(".edge")) === (await count(".edge-head")) && (await count(".edge")) > 0);
   check("the palette lists every block type", (await count(".palette-item")) === 15, String(await count(".palette-item")));
   await shot("01-collapsed");
@@ -162,6 +173,8 @@ await step("opening a block and a step inside it", async () => {
   await clickIn("node:layer.attn", ".sub-toggle");
   check("the breadcrumb shows the level", (await text(".breadcrumb"))?.includes("Grouped-query attention"), await text(".breadcrumb"));
   check("Qwen3 attention has six steps", (await count(".node.is-step")) === 6, String(await count(".node.is-step")));
+  check("the steps sit on one row", await evaluate(stepsOnOneRow));
+  check("the whole row fits on screen", await evaluate(allInsideCanvas(".node.is-step")));
   check("steps carry their equations", (await text('[data-key="step:weights"] .node-meta'))?.includes("softmax"), await text('[data-key="step:weights"] .node-meta'));
   await clickIn("step:weights", ".node-body");
   check("selecting a step explains it", (await text(".inspector .equation"))?.includes("softmax"), await text(".inspector .equation"));
@@ -185,6 +198,7 @@ await step("Gated DeltaNet internals", async () => {
   await click(".group-box .group-toggle");
   await clickIn("node:layer.dn0.deltanet", ".sub-toggle");
   check("the DeltaNet opens into seven steps", (await count(".node.is-step")) === 7, String(await count(".node.is-step")));
+  check("the DeltaNet steps sit on one row", await evaluate(stepsOnOneRow));
   check("the state update shows the delta rule", (await text('[data-key="step:state"] .node-meta'))?.includes("S ←"), await text('[data-key="step:state"] .node-meta'));
   await clickIn("step:state", ".sub-toggle");
   check("the delta rule opens one level further", (await text(".breadcrumb"))?.includes("Delta-rule"), await text(".breadcrumb"));
@@ -201,9 +215,10 @@ await step("difference panel", async () => {
 });
 
 await step("invalid connection by dragging", async () => {
-  // zooms out so both ends of the connection fit on screen
-  await evaluate("document.querySelector('[data-zoom=out]').click()");
-  await evaluate("document.querySelector('[data-zoom=out]').click()");
+  // zooms in enough that the small port dots can be hit, with both ends still on screen
+  await evaluate("document.querySelector('[data-zoom=fit]').click()");
+  await evaluate("document.querySelector('[data-zoom=in]').click()");
+  await evaluate("document.querySelector('[data-zoom=in]').click()");
   await focusItem("node:sampling");
   const from = await rect('[data-key="node:finalNorm"] .port-out');
   const to = await rect('[data-key="node:sampling"] .port-in');

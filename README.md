@@ -27,12 +27,14 @@ and `just perf` need Google Chrome; set `SITE` or `CHROME` to point elsewhere.
 
 - Pick a preset in the top bar. Blocks the two models share move into place;
   the others fade in or out.
-- The diagram is a long strip. It opens at full size at the start of the
-  stream: drag to pan, scroll to zoom, or press **Fit** to see the whole shape.
+- The diagram is one long row. Each view opens zoomed out to fit the whole
+  row, however small that makes it; scroll to zoom in, drag to pan, and press
+  **Fit** to see everything again.
 - Select a block to read its description, shapes, parameter count and sources.
 - **+ on a block opens its inside**: the steps it is made of, with shapes and
-  equations. A step with its own **+** opens one level further, such as the
-  delta-rule state update or the attention weights. The breadcrumb goes back.
+  equations, also on one row; an arrow that has to pass a step goes over it.
+  A step with its own **+** opens one level further, such as the delta-rule
+  state update or the attention weights. The breadcrumb goes back.
 - A repeated layer group is collapsed by default. Expanding it shows one
   repeat, labelled with the repeat count.
 - **Compare** opens the difference panel: differing configuration values, and

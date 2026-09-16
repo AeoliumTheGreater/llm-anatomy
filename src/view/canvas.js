@@ -19,7 +19,6 @@ const STEP_W = 280;
 const MONO_CHAR = 6.7;
 const STEP_H = 60;
 const STEP_GAP_X = 88;
-const STEP_PITCH = 94;
 const BUTTON = 22;
 const LEAVE_MS = 300;
 
@@ -81,66 +80,49 @@ export function layoutGraph(graph, { collapsed, drag }) {
   return { nodes, groups, toStoredX };
 }
 
-/** Lays out an internal graph in columns, keeping the main chain on one line. */
+/** Lays out an internal graph on one row, each step after everything that feeds it. */
 export function layoutInternals(entry, params, globals) {
   const ids = entry.nodes.map((n) => n.id);
-  const incoming = new Map(ids.map((id) => [id, []]));
+  const waiting = new Map(ids.map((id) => [id, 0]));
   const outgoing = new Map(ids.map((id) => [id, []]));
   for (const [from, to] of entry.edges) {
-    incoming.get(to)?.push(from);
-    outgoing.get(from)?.push(to);
+    if (!waiting.has(to) || !outgoing.has(from)) continue;
+    waiting.set(to, waiting.get(to) + 1);
+    outgoing.get(from).push(to);
   }
 
-  // a step sits one column after the latest step feeding it
-  const column = new Map();
-  const columnOf = (id, seen = new Set()) => {
-    if (column.has(id)) return column.get(id);
-    if (seen.has(id)) return 0;
-    seen.add(id);
-    const preds = incoming.get(id);
-    const value = preds.length === 0 ? 0 : Math.max(...preds.map((p) => columnOf(p, seen) + 1));
-    column.set(id, value);
-    return value;
-  };
-  for (const id of ids) columnOf(id);
-
-  // pulls each side input right, next to the step it feeds, so its arrow stays short
-  for (const id of ids) {
-    if (incoming.get(id).length > 0 || outgoing.get(id).length === 0) continue;
-    column.set(id, Math.min(...outgoing.get(id).map((t) => column.get(t))) - 1);
-  }
-  const first = Math.min(...column.values());
-
-  // places columns left to right; a step lines up with its first input, and clashes move down
-  const y = new Map();
-  const nodes = new Map();
-  const byColumn = [...new Set(column.values())].sort((a, b) => a - b);
-  for (const col of byColumn) {
-    const members = entry.nodes
-      .filter((n) => column.get(n.id) === col)
-      .map((n, order) => {
-        const primary = incoming.get(n.id).find((p) => y.has(p));
-        return { step: n, order, wanted: primary ? y.get(primary) : 0 };
-      })
-      .sort((a, b) => a.wanted - b.wanted || a.order - b.order);
-    let floor = -Infinity;
-    for (const { step, wanted } of members) {
-      const top = Math.max(wanted, floor);
-      floor = top + STEP_PITCH;
-      y.set(step.id, top);
-      nodes.set(step.id, {
-        node: { id: step.id, type: null },
-        step,
-        internal: true,
-        shape: step.shape ? resolveShape(step.shape, params, globals) : null,
-        x: (col - first) * (STEP_W + STEP_GAP_X),
-        y: top,
-        w: STEP_W,
-        h: STEP_H,
-        hiddenBy: null,
-      });
+  // orders the steps so each one follows its inputs, keeping the listed order where it can;
+  // a side input therefore lands just before the step it feeds
+  const order = [];
+  const ready = ids.filter((id) => waiting.get(id) === 0);
+  while (ready.length > 0) {
+    ready.sort((a, b) => ids.indexOf(a) - ids.indexOf(b));
+    const id = ready.shift();
+    order.push(id);
+    for (const to of outgoing.get(id)) {
+      waiting.set(to, waiting.get(to) - 1);
+      if (waiting.get(to) === 0) ready.push(to);
     }
   }
+  for (const id of ids) if (!order.includes(id)) order.push(id);
+
+  // places every step on the same line
+  const byId = new Map(entry.nodes.map((n) => [n.id, n]));
+  const nodes = new Map();
+  order.forEach((id, index) => {
+    const step = byId.get(id);
+    nodes.set(id, {
+      node: { id, type: null },
+      step,
+      internal: true,
+      shape: step.shape ? resolveShape(step.shape, params, globals) : null,
+      x: index * (STEP_W + STEP_GAP_X),
+      y: 0,
+      w: STEP_W,
+      h: STEP_H,
+      hiddenBy: null,
+    });
+  });
 
   const known = new Set(ids);
   const edges = entry.edges
@@ -206,19 +188,6 @@ function boundsOf(layout) {
   }
   for (const box of layout.groups) extend(box.x, box.y, box.w, box.h);
   return { minX, minY, maxX, maxY };
-}
-
-/** The view a diagram opens at: full size, starting at the left of the row. */
-export function homeView(layout, width, height) {
-  const { minX, minY, maxY } = boundsOf(layout);
-  if (!Number.isFinite(minX)) return { x: 0, y: 0, scale: 1 };
-  const margin = 40;
-  const spanY = maxY - minY;
-  return {
-    scale: 1,
-    x: margin - minX,
-    y: spanY > height - 2 * margin ? margin - minY : (height - spanY) / 2 - minY,
-  };
 }
 
 /** Computes the pan and zoom that fit every visible node and group into the given size. */
