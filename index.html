@@ -21,7 +21,6 @@
       <button type="button" data-action="import">Import</button>
       <button type="button" data-action="export">Export</button>
       <button type="button" data-action="compare" aria-expanded="false" aria-controls="diffpanel">Compare</button>
-      <button type="button" data-action="theme">Theme: system</button>
       <input class="import-input" type="file" accept=".json,application/json" hidden>
     </div>
   </header>
@@ -31,7 +30,8 @@
     <aside class="palette" aria-label="Block palette"></aside>
     <div class="canvas-wrap">
       <svg class="canvas" role="application" aria-roledescription="graph editor"
-           aria-label="Model graph. Tab moves between blocks; Enter inspects a block."></svg>
+           aria-label="Model diagram. Tab moves between blocks; Enter inspects a block; E opens the inside of one."></svg>
+      <nav class="breadcrumb" aria-label="Level" hidden></nav>
       <div class="zoom-controls">
         <button type="button" data-zoom="in" aria-label="Zoom in">+</button>
         <button type="button" data-zoom="out" aria-label="Zoom out">−</button>

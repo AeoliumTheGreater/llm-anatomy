@@ -4,8 +4,26 @@ import { BLOCK_TYPES } from "./catalogue.js";
 export function resolveShape(shape, params, globals) {
   return shape.map((dim) => {
     if (typeof dim === "number") return dim;
-    return params?.[dim] ?? globals?.[dim] ?? dim;
+    return resolveDimension(dim, params, globals);
   });
+}
+
+/** Works out one dimension, which may be a sum of products such as "2*keyDim+valueDim". */
+function resolveDimension(dim, params, globals) {
+  let total = 0;
+  for (const term of dim.split("+")) {
+    let product = 1;
+    for (const factor of term.split("*")) {
+      const value = Number.isFinite(Number(factor)) && factor.trim() !== ""
+        ? Number(factor)
+        : params?.[factor] ?? globals?.[factor];
+      // leaves the whole dimension symbolic when any part is unknown
+      if (!Number.isFinite(value)) return dim;
+      product *= value;
+    }
+    total += product;
+  }
+  return total;
 }
 
 /** Formats a shape as text, e.g. [B, T, 2048]. */

@@ -1,9 +1,11 @@
 # LLM Anatomy
 
-An interactive page that shows a language model as a graph of blocks. Each
-block has a short description with inline source links, its tensor shapes and
-its parameter count. The page ships three read-only presets: Qwen2.5-0.5B,
-Qwen3-1.7B and Qwen3.5-0.8B.
+An interactive blueprint of a language model. The residual stream runs left to
+right; each layer taps it, does its work above or below the line, and adds the
+result back. Every block opens up: its steps, their tensor shapes, and the
+equations behind them, each with a source link.
+
+Three read-only presets ship with it: Qwen2.5-0.5B, Qwen3-1.7B and Qwen3.5-0.8B.
 
 This is a static site. It uses vanilla JavaScript ES modules, SVG and plain
 CSS. It has no build step and no dependencies.
@@ -13,53 +15,65 @@ CSS. It has no build step and no dependencies.
 ```sh
 just serve   # then open http://localhost:8000
 just test    # runs node --test on the pure modules
+just check   # browser checks against a running site
+just perf    # drag and pan timings with about 300 blocks
 ```
 
-Requires Python 3 for the local server and Node 22 for the tests.
+Requires Python 3 for the local server and Node 22 for the tests. `just check`
+and `just perf` need Google Chrome; set `SITE` or `CHROME` to point elsewhere.
 
 ## Use
 
-- Pick a preset in the top bar. Blocks that both presets share move into
-  place; the others fade in or out.
-- Select a block to read its description, shapes, parameter count and
-  sources. The plus button on a block shows its sub-blocks.
+- Pick a preset in the top bar. Blocks the two models share move into place;
+  the others fade in or out.
+- The diagram is a long strip. It opens at full size at the start of the
+  stream: drag to pan, scroll to zoom, or press **Fit** to see the whole shape.
+- Select a block to read its description, shapes, parameter count and sources.
+- **+ on a block opens its inside**: the steps it is made of, with shapes and
+  equations. A step with its own **+** opens one level further, such as the
+  delta-rule state update or the attention weights. The breadcrumb goes back.
 - A repeated layer group is collapsed by default. Expanding it shows one
   repeat, labelled with the repeat count.
-- **Compare** opens the difference panel: differing configuration values
-  and structural differences such as layer counts per block type.
+- **Compare** opens the difference panel: differing configuration values, and
+  structural differences such as layer counts per block type.
 - Editing a preset creates a working copy named "<preset> (edited)". Drag
-  blocks from the palette, drag from an output port to an input port to
-  connect, and change parameters in the inspector. Connections with
+  blocks from the palette, drag from an output port (right) to an input port
+  (left) to connect, and change parameters in the inspector. Connections with
   mismatched shapes are rejected with both shapes in the message.
 - Undo, redo and reset cover every edit. Working copies are stored in
   `localStorage`; the page still works when storage is blocked.
 - **Export** downloads the graph as JSON. **Import** checks a JSON file and
   lists each problem with its location.
 
-Below 800 px wide the palette is hidden, the inspector moves below the
-canvas and editing is turned off.
+Below 800 px wide the palette is hidden, the inspector moves below the canvas
+and editing is turned off.
 
-The inspector overview lists the keyboard controls.
+The inspector overview lists the keyboard controls. Focus follows the diagram:
+moving to a block off screen pans the canvas to it.
 
 ## Layout
 
 | Path | Contents |
 | --- | --- |
-| `src/catalogue.js` | Block types: ports, parameters, sub-blocks, descriptions, sources |
+| `src/catalogue.js` | Block types: ports, parameters, descriptions, sources |
+| `src/internals.js` | What happens inside each block: steps, shapes, equations |
 | `src/graph.js` | Graph operations, schema validation, undo history |
 | `src/shapes.js` | Shape symbol resolution and connection checks |
 | `src/params.js` | Parameter counts per block and per graph |
 | `src/diff.js` | Differences between two graphs |
 | `src/storage.js` | Local persistence, import and export |
 | `src/presets/` | The three Qwen presets and the shared decoder-layer builder |
-| `src/view/` | Canvas, edges, inspector, palette and difference panel |
+| `src/view/sketch.js` | Hand-drawn strokes: seeded, so a block wobbles the same way every redraw |
+| `src/view/` | Canvas, arrows, inspector, palette and difference panel |
+| `tools/` | Browser and timing checks driven through Chrome |
 | `test/` | `node --test` suites for the pure modules |
 
 ## Sources and checked values
 
 Preset values come from each model's `config.json` and the Hugging Face
-Transformers modelling code. Every link in the catalogue and presets was
-checked before it was added.
+Transformers modelling code. Every link in the catalogue and the internals was
+checked before it was added, and each equation was read from the modelling code
+or the paper it links to.
 
 Parameter totals are tested exactly against hand counts:
 
@@ -70,3 +84,8 @@ Parameter totals are tested exactly against hand counts:
 | Qwen3.5-0.8B | 752,393,024 | Text model only; excludes the vision encoder and multi-token prediction head |
 
 All three models tie the output layer to the embedding, so it is counted once.
+
+## Font
+
+`assets/fonts/architects-daughter.woff2` is Architects Daughter, used under the
+SIL Open Font License; the licence text sits beside it in `assets/fonts/OFL.txt`.

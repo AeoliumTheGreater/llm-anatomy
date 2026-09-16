@@ -1,6 +1,7 @@
-// descriptions use [text](https://…) for inline source links; each link was checked before it was added
+// descriptions use [text](https://…) for inline source links; each link was checked before it was added.
+// what happens inside each block lives in internals.js.
 
-const SRC = {
+export const SRC = {
   vaswani: { label: "Vaswani et al., Attention Is All You Need", url: "https://arxiv.org/abs/1706.03762" },
   pressWolf: { label: "Press & Wolf, Using the Output Embedding to Improve Language Models", url: "https://arxiv.org/abs/1608.05859" },
   rmsNorm: { label: "Zhang & Sennrich, Root Mean Square Layer Normalization", url: "https://arxiv.org/abs/1910.07467" },
@@ -36,12 +37,7 @@ const link = (text, source) => `[${text}](${source.url})`;
 const STREAM = ["B", "T", "d"];
 const io = { inputs: [{ id: "x", shape: STREAM }], outputs: [{ id: "y", shape: STREAM }] };
 
-/** Lists the sub-blocks that apply to a node, skipping ones its params switch off. */
-export function subBlocksFor(node) {
-  return BLOCK_TYPES[node.type].subBlocks.filter((sub) => !sub.when || node.params[sub.when]);
-}
-
-export const CATEGORIES =["input", "normalisation", "sequence mixing", "channel mixing", "residual", "output"];
+export const CATEGORIES = ["input", "normalisation", "sequence mixing", "channel mixing", "residual", "output"];
 
 export const BLOCK_TYPES = {
   embedding: {
@@ -54,7 +50,6 @@ export const BLOCK_TYPES = {
     },
     inputs: [{ id: "tokens", shape: ["B", "T"], external: true }],
     outputs: [{ id: "x", shape: STREAM }],
-    subBlocks: [],
     description:
       "Looks up one learned vector of width d for each token id; this matrix has V × d parameters, the largest single table in a small model. " +
       `With tied embeddings the output layer reuses the same matrix, which ${link("reduces perplexity and model size", SRC.pressWolf)}.`,
@@ -66,7 +61,6 @@ export const BLOCK_TYPES = {
     category: "normalisation",
     params: { d: { type: "int", default: 1024, label: "Width d" } },
     ...io,
-    subBlocks: [],
     description:
       "Divides each vector by its root mean square and multiplies by a learned per-channel gain. " +
       `It drops LayerNorm's mean-centring and bias, and ${link("matches LayerNorm quality while running faster", SRC.rmsNorm)}.`,
@@ -79,9 +73,8 @@ export const BLOCK_TYPES = {
     params: { d: { type: "int", default: 1024, label: "Width d" } },
     inputs: [{ id: "a", shape: STREAM }, { id: "b", shape: STREAM }],
     outputs: [{ id: "y", shape: STREAM }],
-    subBlocks: [],
     description:
-      `Adds a sub-layer's output back to its input, as in ${link("the Transformer", SRC.vaswani)}, so every layer reads from and writes to one shared residual stream. ` +
+      `Adds a sub-layer's output back into the residual stream, as in ${link("the Transformer", SRC.vaswani)}, so every layer reads from and writes to the same running vector. ` +
       `Qwen models normalise inside the branch before each sub-layer (pre-norm); ${link("Pre-LN Transformers have well-behaved gradients at initialisation", SRC.preNorm)}.`,
     sources: [SRC.vaswani, SRC.preNorm],
   },
@@ -101,15 +94,6 @@ export const BLOCK_TYPES = {
       rotaryFraction: { type: "number", default: 1, label: "Rotary fraction" },
     },
     ...io,
-    subBlocks: [
-      { id: "qProjection", name: "Query projection", description: `A linear map from d to queryHeads × headDim. With an output gate it is twice as wide and its second half becomes the gate (${link("Qwen3.5 code", SRC.qwen35Code)}).` },
-      { id: "kvProjection", name: "Key and value projections", description: `Linear maps from d to kvHeads × headDim each. Several query heads share each key/value head, ${link("which shrinks the key/value cache", SRC.gqa)}.` },
-      { id: "qkNorm", name: "QK-norm", when: "qkNorm", description: `RMSNorm over the head dimension of queries and keys, ${link("added in Qwen3", SRC.qwen3)}.` },
-      { id: "rope", name: "RoPE", description: `Rotates query and key vectors by position-dependent angles, so that attention ${link("depends on relative position", SRC.roformer)}. Qwen3.5 rotates only a quarter of each head (${link("partial_rotary_factor 0.25", SRC.qwen35Config)}).` },
-      { id: "softmaxAttention", name: "Attention weights", description: `Scaled dot-product attention: a causal softmax over query–key scores weights a sum of values (${link("Vaswani et al.", SRC.vaswani)}).` },
-      { id: "outputGate", name: "Output gate", when: "outputGate", description: `Multiplies the attention output by a sigmoid gate computed from the input; ${link("a head-specific gate after attention improves quality and stability", SRC.gatedAttention)}.` },
-      { id: "outputProjection", name: "Output projection", description: `A linear map from queryHeads × headDim back to d (${link("Vaswani et al.", SRC.vaswani)}).` },
-    ],
     description:
       `Each position mixes information from earlier positions with a softmax-weighted sum of values (${link("Vaswani et al.", SRC.vaswani)}). ` +
       `${link("Grouped-query attention", SRC.gqa)} lets several query heads share one key/value head. ` +
@@ -125,12 +109,6 @@ export const BLOCK_TYPES = {
       dff: { type: "int", default: 3584, label: "Hidden width dff" },
     },
     ...io,
-    subBlocks: [
-      { id: "gate", name: "Gate projection", description: `A linear map from d to dff, passed through SiLU (Swish), the ${link("SwiGLU", SRC.glu)} gate.` },
-      { id: "up", name: "Up projection", description: `A second linear map from d to dff, with no activation (${link("GLU variants", SRC.glu)}).` },
-      { id: "product", name: "Element-wise product", description: `Multiplies the gate and up vectors channel by channel (${link("GLU variants", SRC.glu)}).` },
-      { id: "down", name: "Down projection", description: `A linear map from dff back to d (${link("GLU variants", SRC.glu)}).` },
-    ],
     description:
       "Processes each position on its own: the gated product SiLU(W_gate x) ⊙ (W_up x) is projected back to width d. " +
       `It is one of the ${link("GLU variants that improve Transformer quality over ReLU or GELU", SRC.glu)}.`,
@@ -149,13 +127,6 @@ export const BLOCK_TYPES = {
       convKernel: { type: "int", default: 4, label: "Convolution kernel" },
     },
     ...io,
-    subBlocks: [
-      { id: "projections", name: "Projections", description: `Linear maps from d to queries, keys and values, to an output gate z, and to per-head scalars a and b (${link("Qwen3.5 code", SRC.qwen35Code)}).` },
-      { id: "shortConv", name: "Short causal convolution", description: `A depthwise causal 1-D convolution over the joined queries, keys and values, so each token mixes with a few predecessors before the state update. Qwen3.5 uses ${link("kernel size 4", SRC.qwen35Config)}.` },
-      { id: "gates", name: "Decay and write gates", description: `a sets how fast the state decays and b sets how strongly the token writes; ${link("gating enables rapid memory erasure", SRC.gatedDeltaNet)}.` },
-      { id: "deltaRule", name: "Delta-rule state update", description: `Each value-head keeps a fixed-size matrix state. The ${link("delta rule", SRC.deltaParallel)} replaces the value stored at a key instead of only adding to it, and ${link("can be trained in parallel over the sequence", SRC.deltaParallel)}.` },
-      { id: "output", name: "Gated norm and output", description: `Reads the state with the query, applies RMSNorm gated by SiLU(z) per value head, and projects back to d (${link("Qwen3.5 code", SRC.qwen35Code)}).` },
-    ],
     description:
       "A linear-attention layer: it keeps a fixed-size state per head instead of a key/value cache that grows with the sequence. " +
       `It combines ${link("gating for rapid memory erasure with the delta rule for targeted updates", SRC.gatedDeltaNet)}. ` +
@@ -173,7 +144,6 @@ export const BLOCK_TYPES = {
     },
     inputs: [{ id: "x", shape: STREAM }],
     outputs: [{ id: "logits", shape: ["B", "T", "V"] }],
-    subBlocks: [],
     description:
       "Projects each final hidden state to one score (logit) per vocabulary entry. " +
       `When tied, it reuses the embedding matrix and adds no parameters; ${link("Press & Wolf", SRC.pressWolf)} show the output matrix is itself a valid word embedding.`,
@@ -189,7 +159,6 @@ export const BLOCK_TYPES = {
     },
     inputs: [{ id: "logits", shape: ["B", "T", "V"] }],
     outputs: [{ id: "token", shape: ["B"] }],
-    subBlocks: [],
     description:
       `A softmax turns the last position's logits into a probability distribution (${link("Vaswani et al.", SRC.vaswani)}), and the next token is drawn from it. ` +
       `Dividing logits by a temperature sharpens or flattens the distribution; ${link("nucleus (top-p) sampling", SRC.holtzman)} draws only from the smallest set of tokens whose probability reaches p. These are decoding settings, not weights.`,
@@ -204,7 +173,6 @@ export const BLOCK_TYPES = {
       pieces: { type: "int", default: 2, label: "Pieces k" },
     },
     ...io,
-    subBlocks: [],
     description:
       `Computes k affine projections of the input and keeps the element-wise maximum. A ${link("maxout unit", SRC.maxout)} outputs the max of a set of inputs, which gives a learned piecewise-linear activation.`,
     sources: [SRC.maxout],
@@ -220,10 +188,6 @@ export const BLOCK_TYPES = {
       activeExperts: { type: "int", default: 8, label: "Active experts" },
     },
     ...io,
-    subBlocks: [
-      { id: "router", name: "Router", description: `A linear map from d to one score per expert; a ${link("trainable gating network picks a sparse set of experts", SRC.moe)} for each token.` },
-      { id: "experts", name: "Experts", description: `Independent SwiGLU MLPs; only the chosen ones run, ${link("so capacity grows without a matching growth in compute", SRC.moe)}.` },
-    ],
     description:
       `Replaces one MLP with many expert MLPs and a router that sends each token to a few of them (${link("Shazeer et al.", SRC.moe)}). ` +
       `${link("OLMoE-1B-7B", SRC.olmoe)} has 7 billion parameters but uses only 1 billion per token.`,
@@ -243,12 +207,6 @@ export const BLOCK_TYPES = {
     },
     inputs: [{ id: "x", shape: STREAM }, { id: "tokens", shape: ["B", "T"], external: true }],
     outputs: [{ id: "y", shape: STREAM }],
-    subBlocks: [
-      { id: "hashing", name: "N-gram hashing", description: `Hashes the 2-gram to N-gram ending at each position into several hash heads, each with its own prime-sized table (${link("demo code", SRC.engramCode)}).` },
-      { id: "tables", name: "Memory tables", description: `Embedding lookups by hash; ${link("deterministic addressing lets the tables be offloaded to host memory", SRC.engram)}.` },
-      { id: "gate", name: "Context gate", description: `Projects the memory to a key, compares it with the normalised hidden state, and scales the projected value by a sigmoid of the score (${link("demo code", SRC.engramCode)}).` },
-      { id: "shortConv", name: "Short convolution", description: `A depthwise causal convolution over the gated value, added back to it (${link("demo code", SRC.engramCode)}).` },
-    ],
     description:
       `A conditional-memory module that ${link("modernises classic N-gram embeddings for O(1) lookup", SRC.engram)}. ` +
       `Recent token n-grams address large tables; the retrieved memory is gated by the hidden state and added to the residual stream (${link("demo code", SRC.engramCode)}). ` +
@@ -267,7 +225,6 @@ export const BLOCK_TYPES = {
       window: { type: "int", default: 4096, label: "Window" },
     },
     ...io,
-    subBlocks: [],
     description:
       `Each position attends only to a fixed window of recent positions, so ${link("cost scales linearly with sequence length", SRC.longformer)}. ` +
       `${link("Mistral 7B", SRC.mistral)} combines it with grouped-query attention.`,
@@ -279,7 +236,6 @@ export const BLOCK_TYPES = {
     category: "normalisation",
     params: { d: { type: "int", default: 1024, label: "Width d" } },
     ...io,
-    subBlocks: [],
     description:
       `Normalises each vector with the mean and variance of its own channels, then applies a ${link("learned gain and bias", SRC.layerNorm)}. ` +
       "It computes the same thing at training and test time.",
@@ -294,7 +250,6 @@ export const BLOCK_TYPES = {
       dff: { type: "int", default: 4096, label: "Hidden width dff" },
     },
     ...io,
-    subBlocks: [],
     description:
       `Two linear layers with biases and a non-linearity between them: the ${link("Transformer feed-forward block", SRC.vaswani)} ` +
       `with ${link("GELU", SRC.gelu)}, x·Φ(x), in place of ReLU.`,
@@ -309,7 +264,6 @@ export const BLOCK_TYPES = {
       maxPositions: { type: "int", default: 2048, label: "Maximum positions" },
     },
     ...io,
-    subBlocks: [],
     description:
       `Adds a learned vector for each absolute position up to a maximum length, as in ${link("convolutional sequence-to-sequence models", SRC.convS2S)} and ${link("BERT", SRC.bert)}. ` +
       "Models with RoPE rotate queries and keys instead and have no such table.",

@@ -1,26 +1,28 @@
-import { BLOCK_TYPES, subBlocksFor } from "../catalogue.js";
+import { BLOCK_TYPES } from "../catalogue.js";
+import { internalsFor } from "../internals.js";
 import { sameEndpoint } from "../graph.js";
 import { countBlockParams, countGraphParams, formatCount } from "../params.js";
-import { checkConnection, formatShape, portShape } from "../shapes.js";
+import { checkConnection, formatShape, portShape, resolveShape } from "../shapes.js";
 import { blockTypeCounts, GLOBAL_LABELS } from "../diff.js";
 import { categoryClass, h, replaceKeepingFocus, richText } from "./dom.js";
 
 const HELP = [
   "Tab moves between blocks; arrow keys jump to the nearest block.",
   "Enter inspects the focused block; Escape returns to the canvas.",
-  "E shows sub-blocks, or expands and collapses a group.",
+  "E opens the inside of a block, or expands and collapses a group.",
   "Shift + arrow keys move a block; Delete removes the selection.",
-  "Drag from an output port (bottom) to an input port (top) to connect.",
+  "Drag from an output port (right) to an input port (left) to connect.",
   "Ctrl+Z undoes, Ctrl+Shift+Z redoes, F fits the view, + and − zoom.",
 ];
 
 const full = (n) => n.toLocaleString("en-GB");
 
-/** Shows the selected block, group or connection, or the model overview when nothing is selected. */
+/** Shows the open block's insides, or the selected block, group or connection. */
 export function renderInspector(container, ctx) {
-  const { selection } = ctx;
+  const { selection, drill } = ctx;
   let content = null;
-  if (selection?.kind === "node") content = nodeView(ctx, selection);
+  if (drill.length > 0) content = drillView(ctx);
+  else if (selection?.kind === "node") content = nodeView(ctx, selection);
   else if (selection?.kind === "group") content = groupView(ctx, selection);
   else if (selection?.kind === "edge") content = edgeView(ctx, selection);
   replaceKeepingFocus(container, content ?? overview(ctx));
@@ -82,23 +84,16 @@ function nodeView(ctx, selection) {
   const type = BLOCK_TYPES[node.type];
   const count = countBlockParams(node.type, node.params);
   const group = graph.groups.find((g) => g.id === node.group);
-  const subs = subBlocksFor(node);
-  const sub = subs.find((s) => s.id === selection.subBlock);
+  const entry = internalsFor(node.type, node.params);
 
   return [
     h("p", { class: `eyebrow cat-text ${categoryClass(type.category)}` }, type.category),
     heading(type.name),
     h("p", { class: "muted mono" }, node.id),
     h("p", { class: "description" }, richText(type.description)),
-    sub && h("div", { class: "subblock-detail" },
-      h("h3", {}, sub.name),
-      h("p", {}, richText(sub.description)),
-      h("button", { type: "button", class: "link-button", onClick: () => actions.select({ kind: "node", id: node.id }) }, "Back to the whole block")),
-    subs.length > 0 && section("Sub-blocks", h("ul", { class: "chips" }, subs.map((s) => h("li", {},
-      h("button", {
-        type: "button", class: "chip", "aria-current": s.id === sub?.id ? "true" : null, "data-focus-key": `sub:${s.id}`,
-        onClick: () => actions.select({ kind: "node", id: node.id, subBlock: s.id }),
-      }, s.name))))),
+    entry && section("Inside",
+      h("p", { class: "note" }, `${entry.nodes.length} steps: ${entry.nodes.map((n) => n.name).join(", ")}.`),
+      h("button", { type: "button", "data-focus-key": "open-inside", onClick: () => actions.openBlock(node.id) }, `Open the inside of ${type.name}`)),
     section("Shapes", shapesTable(graph, node, type)),
     section("Parameters", h("p", { class: "count" }, group
       ? `${full(count)} per repeat × ${group.repeat} = ${full(count * group.repeat)} (${formatCount(count * group.repeat)})`
@@ -107,6 +102,40 @@ function nodeView(ctx, selection) {
     canEdit && type.inputs.some((p) => !p.external) && section("Connections", connectionForm(graph, node, type, actions)),
     canEdit && h("button", { type: "button", class: "danger", onClick: () => actions.remove(node.id) }, "Delete block"),
     section("Sources", sourceList(type.sources)),
+  ];
+}
+
+/** Builds the view inside a block: the open level, or one selected step of it. */
+function drillView(ctx) {
+  const { graph, entry, level, selection, drill, actions } = ctx;
+  if (!entry) return null;
+  const step = selection?.kind === "step" ? entry.nodes.find((n) => n.id === selection.id) : null;
+  const parent = drill.length > 1 ? drill.at(-2).label : graph.name;
+
+  // one step of the open graph
+  if (step) {
+    const shape = step.shape ? formatShape(resolveShape(step.shape, level.params, graph.globals)) : null;
+    return [
+      h("p", { class: "eyebrow" }, `Inside ${level.label}`),
+      heading(step.name),
+      step.equation && h("p", { class: "equation" }, step.equation),
+      h("p", { class: "description" }, richText(step.description)),
+      shape && section("Shape", h("p", { class: "mono" }, shape)),
+      step.drill && h("button", { type: "button", onClick: () => actions.openStep(step.drill) }, `Open the inside of ${step.name}`),
+      h("p", {}, h("button", { type: "button", class: "link-button", onClick: () => actions.select(null) }, `Back to ${level.label}`)),
+    ];
+  }
+
+  // the open graph itself
+  return [
+    h("p", { class: "eyebrow" }, `Inside ${parent}`),
+    heading(level.label),
+    h("p", { class: "note" }, "Select a step on the canvas to read what it does. A step with a + opens one level further."),
+    section("Steps", h("ul", { class: "chips" }, entry.nodes.map((n) => h("li", {},
+      h("button", {
+        type: "button", class: "chip", onClick: () => actions.select({ kind: "step", id: n.id }),
+      }, n.name))))),
+    h("button", { type: "button", onClick: () => actions.goToLevel(drill.length - 2) }, `Back to ${parent}`),
   ];
 }
 
@@ -137,14 +166,12 @@ function paramForm(canEdit, node, type, actions) {
     const focusKey = `param:${node.id}:${key}`;
     const value = node.params[key];
 
-    // builds a checkbox for true-or-false parameters
     if (spec.type === "bool") {
       return h("label", { class: "param-bool" },
         h("input", { type: "checkbox", checked: value, disabled: !canEdit, "data-focus-key": focusKey, onChange: (e) => actions.setParam(node.id, key, e.target.checked) }),
         spec.label);
     }
 
-    // builds a number field that checks its value before applying it
     const id = `param-${key}`;
     const error = h("span", { class: "param-error", "aria-live": "polite" });
     const input = h("input", {

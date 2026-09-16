@@ -1,4 +1,5 @@
 import { BLOCK_TYPES } from "./catalogue.js";
+import { INTERNALS, internalsFor } from "./internals.js";
 import {
   addNode, removeNode, connect, disconnect, updateNode, updateGroup, createNode, makeWorkingCopy,
   unconnectedInputs, createHistory, commit, undo, redo, sameEndpoint,
@@ -10,16 +11,18 @@ import {
 import { PRESET as QWEN2_5 } from "./presets/qwen2_5_0_5b.js";
 import { PRESET as QWEN3 } from "./presets/qwen3_1_7b.js";
 import { PRESET as QWEN3_5 } from "./presets/qwen3_5_0_8b.js";
-import { layoutGraph, renderCanvas, renderDrag, fitToView, portPoint, GRID, NODE_W, NODE_H } from "./view/canvas.js";
-import { renderEdges, renderPendingEdge } from "./view/edges.js";
+import {
+  layoutGraph, layoutInternals, renderCanvas, renderInternals, renderDrag, fitToView, homeView, portPoint,
+  GRID, NODE_W, NODE_H,
+} from "./view/canvas.js";
+import { renderEdges, renderPendingEdge, updateEdgesFor } from "./view/edges.js";
 import { renderInspector } from "./view/inspector.js";
 import { renderPalette, BLOCK_MIME } from "./view/palette.js";
 import { renderDiffPanel } from "./view/diffpanel.js";
 import { h } from "./view/dom.js";
 
 const PRESETS = [QWEN2_5, QWEN3, QWEN3_5];
-const THEMES = ["system", "light", "dark"];
-const MIN_SCALE = 0.15;
+const MIN_SCALE = 0.08;
 const MAX_SCALE = 2.5;
 const ZOOM_STEP = 1.2;
 const DOUBLE_TAP_MS = 350;
@@ -38,6 +41,7 @@ const dom = {
   palette: document.querySelector(".palette"),
   wrap: document.querySelector(".canvas-wrap"),
   svg: document.querySelector(".canvas"),
+  breadcrumb: document.querySelector(".breadcrumb"),
   zoom: document.querySelector(".zoom-controls"),
   status: document.querySelector(".status"),
   inspector: document.querySelector(".inspector"),
@@ -45,17 +49,15 @@ const dom = {
 };
 
 const savedPreset = loadSetting(storage, "preset");
-const savedTheme = loadSetting(storage, "theme");
 const state = {
   presetId: PRESETS.some((p) => p.id === savedPreset) ? savedPreset : QWEN3.id,
   histories: new Map(),
   collapsed: new Map(),
-  expanded: new Set(),
+  drill: [],
   selection: null,
   view: { x: 0, y: 0, scale: 1 },
   diffOpen: false,
   compareWith: null,
-  theme: THEMES.includes(savedTheme) ? savedTheme : "system",
   interaction: null,
   drag: null,
   lastTap: null,
@@ -86,6 +88,11 @@ function currentGraph() {
   return currentHistory().present;
 }
 
+/** Returns true while an internal graph is open. */
+function inDrill() {
+  return state.drill.length > 0;
+}
+
 /** Returns the view-only collapse state of the current preset's groups. */
 function collapsedFor() {
   if (!state.collapsed.has(state.presetId)) state.collapsed.set(state.presetId, new Map());
@@ -103,7 +110,6 @@ function setHistory(history) {
   state.histories.set(state.presetId, history);
   const graph = history.present;
 
-  // keeps storage in step: presets are never stored, working copies always are
   if (graph.readOnly) clearWorkingCopy(storage, state.presetId);
   else if (!saveWorkingCopy(storage, state.presetId, graph)) showStatus("Storage is unavailable, so edits will be lost on reload.", "error");
 
@@ -117,7 +123,7 @@ function setHistory(history) {
 
 /** Applies an edit; the first edit of a preset creates its working copy. */
 function applyEdit(edit) {
-  if (!wideQuery.matches) return;
+  if (!wideQuery.matches || inDrill()) return;
   const history = currentHistory();
   const base = history.present.readOnly ? makeWorkingCopy(history.present) : history.present;
   const next = edit(base);
@@ -150,7 +156,7 @@ function addBlock(typeId, position = centrePosition()) {
 function centrePosition() {
   const rect = dom.svg.getBoundingClientRect();
   const point = clientToGraph(rect.left + rect.width / 2, rect.top + rect.height / 2);
-  return { x: snap(point.x - NODE_W / 2), y: snap(state.layout.toStoredY(point.y - NODE_H / 2)) };
+  return { x: snap(state.layout.toStoredX(point.x - NODE_W / 2)), y: snap(point.y - NODE_H / 2) };
 }
 
 /** Removes the selected block or connection. */
@@ -180,9 +186,43 @@ function problems(graph) {
   return { missing, invalid };
 }
 
+/** Opens the inside of a block. */
+function openBlock(nodeId) {
+  const node = currentGraph().nodes.find((n) => n.id === nodeId);
+  const entry = node && internalsFor(node.type, node.params);
+  if (!entry) return;
+  state.drill = [{ key: node.type, label: BLOCK_TYPES[node.type].name, params: node.params, nodeId }];
+  state.selection = null;
+  afterDrillChange();
+}
+
+/** Opens the inside of a step of the open internal graph. */
+function openStep(drillKey) {
+  const params = state.drill.at(-1)?.params ?? {};
+  const entry = internalsFor(drillKey, params);
+  if (!entry) return;
+  state.drill = [...state.drill, { key: drillKey, label: entry.title ?? drillKey, params }];
+  state.selection = null;
+  afterDrillChange();
+}
+
+/** Goes back to a level of the breadcrumb; -1 is the whole model. */
+function goToLevel(index) {
+  state.drill = state.drill.slice(0, index + 1);
+  state.selection = null;
+  afterDrillChange();
+}
+
+/** Redraws after moving between levels and opens the new picture at full size. */
+function afterDrillChange() {
+  render();
+  requestAnimationFrame(home);
+}
+
 /** Redraws everything. */
 function render({ animate = false } = {}) {
   renderTopbar();
+  renderBreadcrumb();
   renderGraph({ animate });
   renderSidePanels();
 }
@@ -191,7 +231,7 @@ function render({ animate = false } = {}) {
 function renderTopbar() {
   const graph = currentGraph();
   const history = currentHistory();
-  const canEdit = wideQuery.matches;
+  const canEdit = wideQuery.matches && !inDrill();
   for (const button of dom.presets.children) button.setAttribute("aria-pressed", String(button.dataset.preset === state.presetId));
   dom.badge.hidden = graph.readOnly;
   const action = (name) => dom.actions.querySelector(`[data-action="${name}"]`);
@@ -200,25 +240,49 @@ function renderTopbar() {
   action("reset").disabled = !canEdit || graph.readOnly;
   action("import").disabled = !canEdit;
   action("compare").setAttribute("aria-expanded", String(state.diffOpen));
-  action("theme").textContent = `Theme: ${state.theme}`;
+}
+
+/** Shows the path from the whole model down to the open internal graph. */
+function renderBreadcrumb() {
+  dom.breadcrumb.hidden = !inDrill();
+  if (!inDrill()) return;
+  const crumbs = [
+    h("button", { type: "button", onClick: () => goToLevel(-1) }, currentGraph().name),
+    ...state.drill.flatMap((level, index) => [
+      h("span", { "aria-hidden": "true" }, "›"),
+      index === state.drill.length - 1
+        ? h("span", { class: "here", "aria-current": "page" }, level.label)
+        : h("button", { type: "button", onClick: () => goToLevel(index) }, level.label),
+    ]),
+  ];
+  dom.breadcrumb.replaceChildren(...crumbs);
 }
 
 /** Redraws the canvas, keeping keyboard focus on the same item. */
 function renderGraph({ animate = false } = {}) {
-  const graph = currentGraph();
-  const { missing, invalid } = problems(graph);
   const focusKey = dom.svg.contains(document.activeElement) ? document.activeElement.dataset.key : null;
   const moving = animate && !motionQuery.matches;
 
-  // marks the canvas so shared blocks glide and others fade during a preset switch
   if (moving) {
     dom.svg.classList.add("animate");
     clearTimeout(state.animationTimer);
     state.animationTimer = setTimeout(() => dom.svg.classList.remove("animate"), ANIMATION_MS);
   }
 
-  // lays out and draws the graph
-  state.layout = layoutGraph(graph, { collapsed: collapsedFor(), expanded: state.expanded, drag: state.drag });
+  if (inDrill()) renderInternalGraph();
+  else renderModelGraph(moving);
+  applyView();
+
+  if (focusKey && document.activeElement?.dataset?.key !== focusKey) {
+    dom.svg.querySelector(`[data-key="${CSS.escape(focusKey)}"]`)?.focus({ preventScroll: true });
+  }
+}
+
+/** Draws the whole model. */
+function renderModelGraph(moving) {
+  const graph = currentGraph();
+  const { missing, invalid } = problems(graph);
+  state.layout = layoutGraph(graph, { collapsed: collapsedFor(), drag: state.drag });
   state.layers = renderCanvas(dom.svg, {
     graph, layout: state.layout, selection: state.selection, animate: moving, dragId: state.drag?.id,
     warnings: new Set([...missing.map((m) => m.node), ...invalid.map((p) => p.edge.to.node)]),
@@ -226,28 +290,36 @@ function renderGraph({ animate = false } = {}) {
   });
   state.invalid = new Set(invalid.map((p) => p.index));
   renderEdges(state.layers.edges, { graph, layout: state.layout, selection: state.selection, invalid: state.invalid });
-  applyView();
+}
 
-  // restores focus when the focused element was rebuilt
-  if (focusKey && document.activeElement?.dataset?.key !== focusKey) {
-    dom.svg.querySelector(`[data-key="${CSS.escape(focusKey)}"]`)?.focus({ preventScroll: true });
-  }
+/** Draws the internal graph of the open block or step. */
+function renderInternalGraph() {
+  const graph = currentGraph();
+  const level = state.drill.at(-1);
+  const entry = internalsFor(level.key, level.params);
+  state.layout = layoutInternals(entry, level.params, graph.globals);
+  state.layers = renderInternals(dom.svg, { layout: state.layout, selection: state.selection, animate: false });
+  renderEdges(state.layers.edges, {
+    graph: { edges: state.layout.edges }, layout: state.layout, selection: null, invalid: new Set(),
+  });
 }
 
 /** Redraws only what a drag changes: the dragged node, group frames and edges. */
 function renderDragFrame() {
   const graph = currentGraph();
-  state.layout = layoutGraph(graph, { collapsed: collapsedFor(), expanded: state.expanded, drag: state.drag });
-  state.layers = renderDrag(dom.svg, { layout: state.layout, selection: state.selection, dragId: state.drag.id });
-  renderEdges(state.layers.edges, { graph, layout: state.layout, selection: state.selection, invalid: state.invalid });
+  state.layout = layoutGraph(graph, { collapsed: collapsedFor(), drag: state.drag });
+  state.layers = renderDrag(dom.svg, { graph, layout: state.layout, selection: state.selection, dragId: state.drag.id });
+  updateEdgesFor(state.layers.edges, { graph, layout: state.layout }, state.drag.id);
 }
 
 /** Redraws the inspector and the difference panel. */
 function renderSidePanels() {
   const graph = currentGraph();
+  const level = state.drill.at(-1);
   renderInspector(dom.inspector, {
-    graph, selection: state.selection, canEdit: wideQuery.matches, preset: presetById(state.presetId),
+    graph, selection: state.selection, canEdit: wideQuery.matches && !inDrill(), preset: presetById(state.presetId),
     ...problems(graph), isCollapsed, actions: inspectorActions,
+    drill: state.drill, entry: level ? internalsFor(level.key, level.params) : null, level,
   });
   renderDiff();
 }
@@ -258,7 +330,6 @@ function renderDiff() {
   if (!state.diffOpen) return;
   const graph = currentGraph();
 
-  // compares with the previous preset, or with the base preset of an edited copy
   const options = PRESETS.filter((p) => !(graph.readOnly && p.id === state.presetId));
   if (!options.some((p) => p.id === state.compareWith)) {
     state.compareWith = graph.readOnly ? options[0].id : state.presetId;
@@ -273,9 +344,9 @@ function renderDiff() {
 const inspectorActions = {
   select(selection) {
     state.selection = selection;
-    if (selection?.kind === "node" && selection.subBlock) state.expanded.add(selection.id);
     renderGraph();
     renderSidePanels();
+    revealSelection();
   },
   setParam(nodeId, key, value) {
     const node = currentGraph().nodes.find((n) => n.id === nodeId);
@@ -293,14 +364,10 @@ const inspectorActions = {
     applyEdit((graph) => removeNode(graph, nodeId));
   },
   toggleGroup,
+  openBlock,
+  openStep,
+  goToLevel,
 };
-
-/** Shows or hides a block's sub-blocks. */
-function toggleSub(nodeId) {
-  if (state.expanded.has(nodeId)) state.expanded.delete(nodeId);
-  else state.expanded.add(nodeId);
-  renderGraph();
-}
 
 /** Expands or collapses a repeated group. */
 function toggleGroup(groupId) {
@@ -315,16 +382,45 @@ function selectPreset(id) {
   state.compareWith = state.presetId;
   state.presetId = id;
   state.selection = null;
+  state.drill = [];
   saveSetting(storage, "preset", id);
   render({ animate: true });
 }
 
-/** Applies the pan and zoom to the canvas and its dotted grid. */
+/** Applies the pan and zoom to the canvas and its grid. */
 function applyView() {
   const { x, y, scale } = state.view;
   state.layers.viewport.setAttribute("transform", `translate(${x} ${y}) scale(${scale})`);
   dom.wrap.style.backgroundPosition = `${x}px ${y}px`;
-  dom.wrap.style.backgroundSize = `${GRID * scale}px ${GRID * scale}px`;
+  dom.wrap.style.backgroundSize = `${100 * scale}px ${100 * scale}px, ${100 * scale}px ${100 * scale}px, ${GRID * scale}px ${GRID * scale}px, ${GRID * scale}px ${GRID * scale}px`;
+}
+
+/** Pans so a canvas item is visible; the diagram is wider than the canvas. */
+function ensureVisible(el) {
+  if (!el) return;
+  const canvas = dom.svg.getBoundingClientRect();
+  const box = el.getBoundingClientRect();
+  const margin = 56;
+  let dx = 0;
+  let dy = 0;
+
+  // moves just enough to bring the item inside, preferring its left and top edges
+  if (box.right > canvas.right - margin) dx = canvas.right - margin - box.right;
+  if (box.left + dx < canvas.left + margin) dx = canvas.left + margin - box.left;
+  if (box.bottom > canvas.bottom - margin) dy = canvas.bottom - margin - box.bottom;
+  if (box.top + dy < canvas.top + margin) dy = canvas.top + margin - box.top;
+  if (dx === 0 && dy === 0) return;
+
+  state.view = { ...state.view, x: state.view.x + dx, y: state.view.y + dy };
+  applyView();
+}
+
+/** Brings the current selection into view. */
+function revealSelection() {
+  const sel = state.selection;
+  if (!sel || sel.kind === "edge") return;
+  const key = sel.kind === "step" ? `step:${sel.id}` : `${sel.kind}:${sel.id}`;
+  ensureVisible(dom.svg.querySelector(`[data-key="${CSS.escape(key)}"]`));
 }
 
 /** Converts a pointer position to graph coordinates. */
@@ -365,12 +461,19 @@ function fit() {
   applyView();
 }
 
-/** Runs a canvas button: a sub-block toggle, group toggle or sub-block row. */
+/** Opens a diagram at full size, at the start of the stream. */
+function home() {
+  const rect = dom.svg.getBoundingClientRect();
+  state.view = homeView(state.layout, rect.width, rect.height);
+  applyView();
+}
+
+/** Runs a canvas button: a group toggle, or opening the inside of a block or step. */
 function runCanvasAction(el) {
-  const { action, node, group, sub } = el.dataset;
-  if (action === "toggle-sub") toggleSub(node);
+  const { action, node, group, drill } = el.dataset;
   if (action === "toggle-group") toggleGroup(group);
-  if (action === "select-sub") inspectorActions.select({ kind: "node", id: node, subBlock: sub });
+  if (action === "open-block") openBlock(node);
+  if (action === "open-step") openStep(drill);
 }
 
 /** Returns the distance between the two active pointers. */
@@ -385,7 +488,6 @@ function onPointerDown(event) {
   pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
   dom.svg.setPointerCapture(event.pointerId);
 
-  // starts a pinch when a second finger lands
   if (pointers.size === 2) {
     state.interaction = { kind: "pinch", distance: pointerDistance() };
     state.drag = null;
@@ -401,45 +503,58 @@ function onPointerDown(event) {
     return;
   }
 
-  // starts dragging a new connection from an output port
+  // inside a block, steps only select; the canvas still pans
+  const stepEl = target.closest("[data-step]");
+  if (stepEl) {
+    inspectorActions.select({ kind: "step", id: stepEl.dataset.step });
+    state.interaction = panFrom(event, false);
+    return;
+  }
+
   const outPort = target.closest(".port-out");
-  if (outPort && wideQuery.matches) {
+  if (outPort && wideQuery.matches && !inDrill()) {
     state.interaction = { kind: "connect", from: { node: outPort.dataset.node, port: outPort.dataset.port } };
     return;
   }
 
-  // selects a node, toggles its sub-blocks on double tap and starts dragging it
   const nodeEl = target.closest(".node");
-  if (nodeEl) {
+  if (nodeEl && nodeEl.dataset.node) {
     const id = nodeEl.dataset.node;
     const node = currentGraph().nodes.find((n) => n.id === id);
     const doubleTap = state.lastTap?.id === id && event.timeStamp - state.lastTap.time < DOUBLE_TAP_MS;
     state.lastTap = { id, time: event.timeStamp };
     state.selection = { kind: "node", id };
-    if (doubleTap) state.expanded.has(id) ? state.expanded.delete(id) : state.expanded.add(id);
+    if (doubleTap) {
+      openBlock(id);
+      state.interaction = null;
+      return;
+    }
     renderGraph();
     renderSidePanels();
     state.interaction = wideQuery.matches
       ? { kind: "drag", id, startX: event.clientX, startY: event.clientY, origin: { ...node.position }, moved: false }
-      : { kind: "pan", startX: event.clientX, startY: event.clientY, originX: state.view.x, originY: state.view.y, moved: false };
+      : panFrom(event, false);
     return;
   }
 
-  // selects an edge
   const edgeEl = target.closest(".edge-hit");
-  if (edgeEl) {
+  if (edgeEl && !inDrill()) {
     const edge = currentGraph().edges[Number(edgeEl.dataset.edge)];
     inspectorActions.select({ kind: "edge", from: edge.from, to: edge.to });
     state.interaction = null;
     return;
   }
 
-  // selects a group, then pans from anywhere else
   const groupEl = target.closest(".group-box, .group-header");
   if (groupEl) inspectorActions.select({ kind: "group", id: groupEl.dataset.group });
-  state.interaction = {
+  state.interaction = panFrom(event, !groupEl);
+}
+
+/** Starts a pan from the current pointer. */
+function panFrom(event, clearOnClick) {
+  return {
     kind: "pan", startX: event.clientX, startY: event.clientY,
-    originX: state.view.x, originY: state.view.y, moved: false, clearOnClick: !groupEl,
+    originX: state.view.x, originY: state.view.y, moved: false, clearOnClick,
   };
 }
 
@@ -450,7 +565,6 @@ function onPointerMove(event) {
   const it = state.interaction;
   if (!it) return;
 
-  // zooms by the change in finger distance
   if (it.kind === "pinch" && pointers.size === 2) {
     const [a, b] = [...pointers.values()];
     const distance = pointerDistance();
@@ -462,7 +576,6 @@ function onPointerMove(event) {
   const dx = event.clientX - it.startX;
   const dy = event.clientY - it.startY;
 
-  // pans the view
   if (it.kind === "pan") {
     if (Math.hypot(dx, dy) > 3) it.moved = true;
     state.view = { ...state.view, x: it.originX + dx, y: it.originY + dy };
@@ -470,7 +583,6 @@ function onPointerMove(event) {
     return;
   }
 
-  // moves the dragged node on the grid without recording an edit yet
   if (it.kind === "drag") {
     if (!it.moved && Math.hypot(dx, dy) < 4) return;
     it.moved = true;
@@ -482,7 +594,6 @@ function onPointerMove(event) {
     return;
   }
 
-  // draws the pending connection to the pointer
   if (it.kind === "connect") {
     renderPendingEdge(state.layers.overlay, portPoint(state.layout, it.from, "outputs"), clientToGraph(event.clientX, event.clientY));
   }
@@ -499,7 +610,6 @@ function onPointerUp(event) {
   state.interaction = null;
   if (!it) return;
 
-  // records a finished drag as one edit
   if (it.kind === "drag") {
     const drag = state.drag;
     state.drag = null;
@@ -510,17 +620,15 @@ function onPointerUp(event) {
     return;
   }
 
-  // clears the selection after a click on empty canvas
   if (it.kind === "pan" && !it.moved && it.clearOnClick && state.selection) {
     inspectorActions.select(null);
     return;
   }
 
-  // connects to the input port under the pointer
   if (it.kind === "connect") {
     renderPendingEdge(state.layers.overlay, null, null);
     const inPort = document.elementFromPoint(event.clientX, event.clientY)?.closest(".port-in");
-    if (inPort) tryConnect(it.from, { node: inPort.dataset.node, port: inPort.dataset.port });
+    if (inPort?.dataset.node) tryConnect(it.from, { node: inPort.dataset.node, port: inPort.dataset.port });
   }
 }
 
@@ -564,36 +672,39 @@ function onCanvasKeyDown(event) {
   const target = event.target;
   const action = target.closest?.("[data-action]");
   const item = target.closest?.("[data-key]");
-  const nodeId = target.closest?.(".node")?.dataset.node;
+  const nodeId = target.closest?.("[data-node]")?.dataset.node;
+  const stepId = target.closest?.("[data-step]")?.dataset.step;
   const groupId = item?.dataset.group;
 
-  // activates canvas buttons
   if ((event.key === "Enter" || event.key === " ") && action) {
     event.preventDefault();
     runCanvasAction(action);
     return;
   }
 
-  // inspects the focused block or group and moves focus to the inspector
   if ((event.key === "Enter" || event.key === " ") && item) {
     event.preventDefault();
-    inspectorActions.select(nodeId ? { kind: "node", id: nodeId } : { kind: "group", id: groupId });
+    if (stepId) inspectorActions.select({ kind: "step", id: stepId });
+    else inspectorActions.select(nodeId ? { kind: "node", id: nodeId } : { kind: "group", id: groupId });
     dom.inspector.querySelector(".inspector-heading")?.focus();
     return;
   }
 
-  // expands sub-blocks or groups
+  // opens the inside of a block or step
   if (event.key.toLowerCase() === "e" && !event.ctrlKey && !event.metaKey && !event.altKey) {
-    if (nodeId) toggleSub(nodeId);
+    if (stepId) {
+      const level = state.drill.at(-1);
+      const step = internalsFor(level.key, level.params)?.nodes.find((n) => n.id === stepId);
+      if (step?.drill) openStep(step.drill);
+    } else if (nodeId) openBlock(nodeId);
     else if (groupId) toggleGroup(groupId);
     return;
   }
 
-  // moves a block with Shift, otherwise moves focus
   const direction = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[event.key];
   if (direction && item) {
     event.preventDefault();
-    if (event.shiftKey && nodeId && wideQuery.matches) {
+    if (event.shiftKey && nodeId && wideQuery.matches && !inDrill()) {
       const node = currentGraph().nodes.find((n) => n.id === nodeId);
       const position = { x: node.position.x + direction[0] * GRID, y: node.position.y + direction[1] * GRID };
       applyEdit((graph) => updateNode(graph, nodeId, { position }));
@@ -607,7 +718,6 @@ function onCanvasKeyDown(event) {
 function onDocumentKeyDown(event) {
   const inField = event.target.closest?.("input, select, textarea");
 
-  // returns from the inspector to the selected canvas item, or clears the selection
   if (event.key === "Escape") {
     if (state.interaction?.kind === "connect") {
       state.interaction = null;
@@ -616,31 +726,31 @@ function onDocumentKeyDown(event) {
     }
     const sel = state.selection;
     if (dom.inspector.contains(event.target) && sel && sel.kind !== "edge") {
-      dom.svg.querySelector(`[data-key="${CSS.escape(`${sel.kind}:${sel.id}`)}"]`)?.focus();
+      const key = sel.kind === "step" ? `step:${sel.id}` : `${sel.kind}:${sel.id}`;
+      dom.svg.querySelector(`[data-key="${CSS.escape(key)}"]`)?.focus();
       return;
     }
     if (!inField && sel) inspectorActions.select(null);
+    else if (!inField && inDrill()) goToLevel(state.drill.length - 2);
     return;
   }
   if (inField) return;
 
-  // undoes and redoes
   const mod = event.ctrlKey || event.metaKey;
   const key = event.key.toLowerCase();
   if (mod && key === "z" && !event.shiftKey) {
     event.preventDefault();
-    if (wideQuery.matches) setHistory(undo(currentHistory()));
+    if (wideQuery.matches && !inDrill()) setHistory(undo(currentHistory()));
     return;
   }
   if (mod && ((key === "z" && event.shiftKey) || key === "y")) {
     event.preventDefault();
-    if (wideQuery.matches) setHistory(redo(currentHistory()));
+    if (wideQuery.matches && !inDrill()) setHistory(redo(currentHistory()));
     return;
   }
   if (mod || event.altKey) return;
 
-  // deletes, fits and zooms
-  if ((event.key === "Delete" || event.key === "Backspace") && state.selection && wideQuery.matches) {
+  if ((event.key === "Delete" || event.key === "Backspace") && state.selection && wideQuery.matches && !inDrill()) {
     event.preventDefault();
     deleteSelection();
   } else if (key === "f") {
@@ -668,12 +778,6 @@ function onAction(name) {
     renderTopbar();
     renderDiff();
   }
-  if (name === "theme") {
-    state.theme = THEMES[(THEMES.indexOf(state.theme) + 1) % THEMES.length];
-    saveSetting(storage, "theme", state.theme);
-    applyTheme();
-    renderTopbar();
-  }
 }
 
 /** Downloads the graph on screen as JSON. */
@@ -698,28 +802,19 @@ async function onImportFile() {
     return;
   }
   state.selection = null;
+  state.drill = [];
   setHistory(commit(currentHistory(), { ...graph, basePreset: graph.basePreset ?? state.presetId }));
-  fit();
+  home();
   showStatus(`Imported ${graph.name}.`);
-}
-
-/** Applies the chosen theme; "system" follows the operating system. */
-function applyTheme() {
-  if (state.theme === "system") delete document.documentElement.dataset.theme;
-  else document.documentElement.dataset.theme = state.theme;
 }
 
 /** Builds the static controls and wires up events. */
 function init() {
-  applyTheme();
-
-  // builds the preset toggle and palette
   dom.presets.replaceChildren(...PRESETS.map((p) => h("button", {
     type: "button", class: "preset", "data-preset": p.id, "aria-pressed": "false", onClick: () => selectPreset(p.id),
   }, p.name)));
   renderPalette(dom.palette, { onAdd: (typeId) => addBlock(typeId) });
 
-  // wires buttons and file import
   dom.actions.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-action]");
     if (button) onAction(button.dataset.action);
@@ -732,7 +827,6 @@ function init() {
     if (zoom === "fit") fit();
   });
 
-  // wires canvas pointer, wheel and keyboard input
   dom.svg.addEventListener("pointerdown", onPointerDown);
   dom.svg.addEventListener("pointermove", onPointerMove);
   dom.svg.addEventListener("pointerup", onPointerUp);
@@ -742,31 +836,30 @@ function init() {
     zoomAt(Math.exp(-event.deltaY * 0.0015), event.clientX, event.clientY);
   }, { passive: false });
   dom.svg.addEventListener("keydown", onCanvasKeyDown);
+  dom.svg.addEventListener("focusin", (event) => ensureVisible(event.target.closest?.("[data-key]")));
   document.addEventListener("keydown", onDocumentKeyDown);
 
-  // accepts blocks dropped from the palette
   dom.svg.addEventListener("dragover", (event) => {
-    if (wideQuery.matches && event.dataTransfer.types.includes(BLOCK_MIME)) {
+    if (wideQuery.matches && !inDrill() && event.dataTransfer.types.includes(BLOCK_MIME)) {
       event.preventDefault();
       event.dataTransfer.dropEffect = "copy";
     }
   });
   dom.svg.addEventListener("drop", (event) => {
     const typeId = event.dataTransfer.getData(BLOCK_MIME);
-    if (!BLOCK_TYPES[typeId]) return;
+    if (!BLOCK_TYPES[typeId] || inDrill()) return;
     event.preventDefault();
     const point = clientToGraph(event.clientX, event.clientY);
-    addBlock(typeId, { x: snap(point.x - NODE_W / 2), y: snap(state.layout.toStoredY(point.y - NODE_H / 2)) });
+    addBlock(typeId, { x: snap(state.layout.toStoredX(point.x - NODE_W / 2)), y: snap(point.y - NODE_H / 2) });
   });
 
-  // redraws when the layout switches between wide and narrow
   wideQuery.addEventListener("change", () => {
     render();
-    requestAnimationFrame(fit);
+    requestAnimationFrame(home);
   });
 
   render();
-  requestAnimationFrame(fit);
+  requestAnimationFrame(home);
 }
 
 init();

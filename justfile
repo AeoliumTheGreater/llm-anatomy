@@ -5,3 +5,11 @@ serve:
 # runs the pure-module tests
 test:
     node --test
+
+# runs the browser checks against a running site
+check:
+    node tools/browser-check.mjs
+
+# measures drag and pan with about 300 blocks
+perf:
+    node tools/perf-check.mjs

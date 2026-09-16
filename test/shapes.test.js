@@ -21,6 +21,13 @@ test("resolveShape uses node params before globals and keeps B and T symbolic", 
   assert.equal(formatShape(["B", "T", 2048]), "[B, T, 2048]");
 });
 
+test("resolveShape works out products and sums of symbols", () => {
+  const params = { queryHeads: 16, headDim: 128, keyDim: 2048, valueDim: 2048 };
+  assert.deepEqual(resolveShape(["B", "T", "queryHeads*headDim"], params, {}), ["B", "T", 2048]);
+  assert.deepEqual(resolveShape(["B", "2*keyDim+valueDim"], params, {}), ["B", 6144]);
+  assert.deepEqual(resolveShape(["B", "queryHeads*missing"], params, {}), ["B", "queryHeads*missing"]);
+});
+
 test("checkConnection accepts matching shapes", () => {
   for (const edge of QWEN3.edges) {
     assert.deepEqual(checkConnection(QWEN3, edge.from, edge.to), { ok: true, message: null });
