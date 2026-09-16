@@ -32,6 +32,11 @@
       <svg class="canvas" role="application" aria-roledescription="graph editor"
            aria-label="Model diagram. Tab moves between blocks; Enter inspects a block; E opens the inside of one."></svg>
       <nav class="breadcrumb" aria-label="Level" hidden></nav>
+      <ul class="legend" aria-label="Key">
+        <li><span class="key key-stream" aria-hidden="true"></span>Residual stream x: one running vector, carried past each sub-layer unchanged</li>
+        <li><span class="key key-branch" aria-hidden="true"></span>Sub-layer: reads a normalised copy of x</li>
+        <li><span class="key key-add" aria-hidden="true">+</span>Adds the sub-layer's output back: x ← x + update</li>
+      </ul>
       <div class="zoom-controls">
         <button type="button" data-zoom="in" aria-label="Zoom in">+</button>
         <button type="button" data-zoom="out" aria-label="Zoom out">−</button>

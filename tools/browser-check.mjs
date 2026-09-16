@@ -158,23 +158,29 @@ await step("group expansion", async () => {
   const add = await rect('[data-key="node:layer.add1"] .node-body');
   check("the whole layer sits on one row", Math.abs(attn.cy - add.cy) < 2 && Math.abs(mlp.cy - add.cy) < 2, `${Math.round(attn.cy)}, ${Math.round(add.cy)}, ${Math.round(mlp.cy)}`);
   check("both skips are labelled", (await count(".edge-label")) === 2, String(await count(".edge-label")));
-  check("the skip label says x passes unchanged", (await text(".edge-label"))?.includes("unchanged"), await text(".edge-label"));
+  check("the lanes are named as the residual stream", (await text(".edge-label"))?.includes("residual stream"), await text(".edge-label"));
+  check("the stream is drawn as its own line through both adders", (await count(".edge.is-stream")) === 3, String(await count(".edge.is-stream")));
+  check("the key is shown on the model view", !(await evaluate("document.querySelector('.legend').hidden")));
   await clickIn("group:layer", "rect");
   check("the group explains how a layer adds to the stream", (await text(".inspector"))?.includes("x′ = h + MLP(RMSNorm(h))"), "");
   check("a dot marks where each skip leaves the line", (await count(".edge-junction")) >= 2, String(await count(".edge-junction")));
   check("the longest block title fits before its button", await evaluate(`document.querySelector('[data-key="node:layer.attn"] .node-title').getComputedTextLength() < 240 - 32 - 14 - 4`));
   const skipLabel = await rect(".edge-label");
   check("the skip lanes run above the row", skipLabel.cy < add.y, `${Math.round(skipLabel.cy)} < ${Math.round(add.y)}`);
-  await focusItem("node:layer.attn");
-  await shot("02-expanded");
+  // a close-up near full size, for judging how the stream reads
+  for (let i = 0; i < 6; i += 1) await evaluate("document.querySelector('[data-zoom=in]').click()");
+  await focusItem("node:layer.norm1");
+  await shot("02-expanded-close");
   await evaluate("document.querySelector('[data-zoom=fit]').click()");
   await sleep(150);
-  await shot("02-expanded-fit");
+  await focusItem("node:layer.attn");
+  await shot("02-expanded");
 });
 
 await step("opening a block and a step inside it", async () => {
   await clickIn("node:layer.attn", ".sub-toggle");
   check("the breadcrumb shows the level", (await text(".breadcrumb"))?.includes("Grouped-query attention"), await text(".breadcrumb"));
+  check("the key is hidden inside a block", await evaluate("document.querySelector('.legend').hidden"));
   check("Qwen3 attention has six steps", (await count(".node.is-step")) === 6, String(await count(".node.is-step")));
   check("the steps sit on one row", await evaluate(stepsOnOneRow));
   check("the whole row fits on screen", await evaluate(allInsideCanvas(".node.is-step")));

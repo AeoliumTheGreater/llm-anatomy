@@ -17,6 +17,7 @@
   --warn: #ffd166;
   --edge: #e4ecfb;
   --edge-grouped: #93aed6;
+  --stream: #b5f0a0;
   --cat-input: #9fe8c6;
   --cat-normalisation: #9ad7ff;
   --cat-sequence-mixing: #d8c0ff;
@@ -224,6 +225,47 @@ h3 {
 .breadcrumb .here {
   font-weight: 600;
 }
+.legend {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: grid;
+  gap: 4px;
+  max-width: min(440px, calc(100% - 170px));
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: rgb(11 36 71 / 0.9);
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  list-style: none;
+}
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.key {
+  flex: none;
+  width: 28px;
+  border-top: 1.5px solid var(--edge);
+}
+.key-stream {
+  border-top: 3px solid var(--stream);
+}
+.key-add {
+  width: 16px;
+  height: 16px;
+  margin: 0 6px;
+  border: 2px solid var(--stream);
+  border-radius: 50%;
+  color: var(--stream);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 12px;
+  text-align: center;
+}
 .zoom-controls {
   position: absolute;
   right: 12px;
@@ -263,6 +305,13 @@ h3 {
   fill: var(--box);
   stroke: var(--ink);
   stroke-width: 1.4;
+}
+.node.is-adder .node-body {
+  stroke: var(--stream);
+  stroke-width: 2;
+}
+.node.is-adder .adder-sign {
+  stroke: var(--stream);
 }
 .node:hover .node-body {
   stroke: var(--accent);
@@ -434,6 +483,23 @@ h3 {
 }
 .edge.is-grouped .edge-head {
   fill: var(--edge-grouped);
+}
+
+/* the residual stream stands apart from the sub-layer branches */
+.edge.is-stream .edge-line {
+  stroke: var(--stream);
+  stroke-width: 3;
+}
+.edge.is-stream .edge-head,
+.edge-junction {
+  fill: var(--stream);
+}
+.edge.is-stream.is-grouped .edge-line {
+  stroke: var(--stream);
+  opacity: 0.8;
+}
+.edge-label {
+  fill: var(--stream);
 }
 .edge.is-selected .edge-line {
   stroke: var(--accent);

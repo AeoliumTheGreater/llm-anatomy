@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { layoutGraph, layoutInternals } from "../src/view/canvas.js";
-import { obstaclesFor, routeEdge, routesFor } from "../src/view/edges.js";
+import { obstaclesFor, routeEdge, routesFor, streamEdges } from "../src/view/edges.js";
 import { INTERNALS, internalsFor } from "../src/internals.js";
 import { PRESET as QWEN2_5 } from "../src/presets/qwen2_5_0_5b.js";
 import { PRESET as QWEN3 } from "../src/presets/qwen3_1_7b.js";
@@ -60,6 +60,24 @@ function assertTidy(name, graph, layout) {
     }
   }
 }
+
+test("the residual stream runs from the embedding through every adder to the final norm", () => {
+  const names = (preset) => [...streamEdges(preset)].map((i) => `${preset.edges[i].from.node}→${preset.edges[i].to.node}`);
+  assert.deepEqual(names(QWEN3), ["embed→layer.add1", "layer.add1→layer.add2", "layer.add2→finalNorm"]);
+  assert.deepEqual(names(QWEN3_5), [
+    "embed→layer.dn0.add1", "layer.dn0.add1→layer.dn0.add2",
+    "layer.dn0.add2→layer.dn1.add1", "layer.dn1.add1→layer.dn1.add2",
+    "layer.dn1.add2→layer.dn2.add1", "layer.dn2.add1→layer.dn2.add2",
+    "layer.dn2.add2→layer.add1", "layer.add1→layer.add2",
+    "layer.add2→finalNorm",
+  ]);
+});
+
+test("a collapsed group still shows the stream passing through it", () => {
+  const layout = layoutGraph(QWEN3, { collapsed: new Map([["layer", true]]), drag: null });
+  const stream = routesFor(QWEN3, layout).filter((r) => r.stream).map((r) => `${r.edge.from.node}→${r.edge.to.node}`);
+  assert.deepEqual(stream, ["embed→layer.norm1", "layer.add2→finalNorm"]);
+});
 
 test("blocks facing each other on one row get a straight arrow", () => {
   assert.deepEqual(routeEdge(right(0, 26), left(100, 26)), [[0, 26], [100, 26]]);

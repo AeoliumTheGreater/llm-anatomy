@@ -4,8 +4,10 @@ An interactive blueprint of a language model. Each layer sits on one row, read
 left to right: norm, attention, add, norm, MLP, add. The residual stream x is one
 running vector: each sub-layer reads a normalised copy and adds its update back
 (`h = x + mixer(RMSNorm(x))`, then `x′ = h + MLP(RMSNorm(h))`), and `x′` goes on to
-the next layer. The unchanged copy of x runs in a lane above each sub-layer and
-drops into the adder, and connections never cross. Every block opens up: its steps, their tensor shapes, and the
+the next layer. The stream is drawn as one thick green line: it runs in a lane
+above each sub-layer, drops into each adder and carries on, while the thin white
+branches show what each sub-layer reads and adds. A key in the corner says so,
+and connections never cross. Every block opens up: its steps, their tensor shapes, and the
 equations behind them, each with a source link.
 
 Three read-only presets ship with it: Qwen2.5-0.5B, Qwen3-1.7B and Qwen3.5-0.8B.

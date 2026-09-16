@@ -42,6 +42,7 @@ const dom = {
   wrap: document.querySelector(".canvas-wrap"),
   svg: document.querySelector(".canvas"),
   breadcrumb: document.querySelector(".breadcrumb"),
+  legend: document.querySelector(".legend"),
   zoom: document.querySelector(".zoom-controls"),
   status: document.querySelector(".status"),
   inspector: document.querySelector(".inspector"),
@@ -244,6 +245,7 @@ function renderTopbar() {
 
 /** Shows the path from the whole model down to the open internal graph. */
 function renderBreadcrumb() {
+  dom.legend.hidden = inDrill();
   dom.breadcrumb.hidden = !inDrill();
   if (!inDrill()) return;
   const crumbs = [
