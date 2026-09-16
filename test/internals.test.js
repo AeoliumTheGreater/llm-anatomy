@@ -39,6 +39,17 @@ test("every internal graph is joined up and sourced", () => {
   }
 });
 
+test("every equation fits on its card without being shortened", () => {
+  // a 280 px card holds 38 monospace characters, or 33 beside an open button
+  for (const [key, entry] of Object.entries(INTERNALS)) {
+    for (const step of entry.nodes) {
+      if (!step.equation) continue;
+      const room = step.drill ? 33 : 38;
+      assert.ok([...step.equation].length <= room, `${key}.${step.id}: "${step.equation}" is ${[...step.equation].length} characters`);
+    }
+  }
+});
+
 test("internal shapes resolve against the preset that uses them", () => {
   const node = QWEN3_5.nodes.find((n) => n.type === "gatedDeltaNet");
   for (const step of internalsFor("gatedDeltaNet", node.params).nodes) {

@@ -3,62 +3,51 @@ import { internalsFor } from "../internals.js";
 import { countBlockParams, formatCount } from "../params.js";
 import { formatShape, portShape, resolveShape } from "../shapes.js";
 import { categoryClass, svg } from "./dom.js";
-import { seedFrom, sketchCircle, sketchRect } from "./sketch.js";
 
-export const NODE_W = 216;
+export const NODE_W = 240;
 export const NODE_H = 52;
 export const ADD_SIZE = 52;
 export const GRID = 20;
-const GROUP_PAD = 28;
-const GROUP_HEADER = 34;
+const ADD_R = 18;
+const PORT_R = 3.5;
+const GROUP_PAD = 24;
+const GROUP_HEADER = 30;
+const SKIP_SPACE = 60;
 const COLLAPSED_W = 300;
-const COLLAPSED_H = 104;
-const STEP_W = 230;
+const COLLAPSED_H = 72;
+const STEP_W = 280;
+const MONO_CHAR = 6.7;
 const STEP_H = 60;
-const STEP_GAP_X = 92;
-const STEP_GAP_Y = 34;
+const STEP_GAP_X = 88;
+const STEP_PITCH = 94;
+const BUTTON = 22;
 const LEAVE_MS = 300;
-
-const shapeCache = new Map();
-
-/** Returns a hand-drawn box path, drawing each size only once. */
-function boxPath(key, w, h) {
-  const id = `${key}:${w}x${h}`;
-  if (!shapeCache.has(id)) shapeCache.set(id, sketchRect(w, h, seedFrom(id)));
-  return shapeCache.get(id);
-}
-
-/** Returns a hand-drawn circle path, drawing each size only once. */
-function circlePath(key, r) {
-  const id = `${key}:o${r}`;
-  if (!shapeCache.has(id)) shapeCache.set(id, sketchCircle(r, r, r, seedFrom(id)));
-  return shapeCache.get(id);
-}
 
 /** Returns the size of a block on the canvas. */
 function sizeOf(node) {
   return node.type === "residualAdd" ? { w: ADD_SIZE, h: ADD_SIZE } : { w: NODE_W, h: NODE_H };
 }
 
-/** Computes where every node, group and port sits along the left-to-right stream. */
+/** Computes where every node, group and port sits along the row. */
 export function layoutGraph(graph, { collapsed, drag }) {
-  // measures each group around its members
+  // measures each group around its members, leaving room above for the skip lanes
   const groups = [];
   for (const group of graph.groups) {
     const members = graph.nodes.filter((n) => n.group === group.id);
     if (members.length === 0) continue;
     const left = Math.min(...members.map((n) => n.position.x)) - GROUP_PAD;
     const right = Math.max(...members.map((n) => n.position.x + sizeOf(n).w)) + GROUP_PAD;
-    const top = Math.min(...members.map((n) => n.position.y)) - GROUP_PAD - GROUP_HEADER;
+    const rowTop = Math.min(...members.map((n) => n.position.y));
+    const top = rowTop - SKIP_SPACE - GROUP_HEADER;
     const bottom = Math.max(...members.map((n) => n.position.y + sizeOf(n).h)) + GROUP_PAD;
     const isCollapsed = collapsed.get(group.id) ?? group.collapsed;
     groups.push({
       group, members, collapsed: isCollapsed,
-      storedX: left, fullW: right - left, y: top + (bottom - top - COLLAPSED_H) / 2, x: left,
+      storedX: left, fullW: right - left, x: left,
+      y: isCollapsed ? rowTop + NODE_H / 2 - COLLAPSED_H / 2 : top,
       w: isCollapsed ? COLLAPSED_W : right - left,
       h: isCollapsed ? COLLAPSED_H : bottom - top,
     });
-    if (!isCollapsed) groups.at(-1).y = top;
   }
   groups.sort((a, b) => a.storedX - b.storedX);
 
@@ -89,96 +78,106 @@ export function layoutGraph(graph, { collapsed, drag }) {
     });
   }
 
-  // decides which side of an adder its branch arrives on
-  const branchSide = new Map();
-  for (const node of graph.nodes) {
-    if (node.type !== "residualAdd") continue;
-    const edge = graph.edges.find((e) => e.to.node === node.id && e.to.port === "b");
-    const source = edge && nodes.get(edge.from.node);
-    const item = nodes.get(node.id);
-    branchSide.set(node.id, source && source.y + source.h / 2 > item.y + item.h / 2 ? "bottom" : "top");
-  }
-
-  return { nodes, groups, branchSide, toStoredX };
+  return { nodes, groups, toStoredX };
 }
 
-/** Lays out an internal graph left to right, one column per step in the chain. */
+/** Lays out an internal graph in columns, keeping the main chain on one line. */
 export function layoutInternals(entry, params, globals) {
-  const byId = new Map(entry.nodes.map((n) => [n.id, n]));
-  const incoming = new Map(entry.nodes.map((n) => [n.id, []]));
-  for (const [from, to] of entry.edges) incoming.get(to)?.push(from);
+  const ids = entry.nodes.map((n) => n.id);
+  const incoming = new Map(ids.map((id) => [id, []]));
+  const outgoing = new Map(ids.map((id) => [id, []]));
+  for (const [from, to] of entry.edges) {
+    incoming.get(to)?.push(from);
+    outgoing.get(from)?.push(to);
+  }
 
   // a step sits one column after the latest step feeding it
-  const depth = new Map();
-  const depthOf = (id, seen = new Set()) => {
-    if (depth.has(id)) return depth.get(id);
+  const column = new Map();
+  const columnOf = (id, seen = new Set()) => {
+    if (column.has(id)) return column.get(id);
     if (seen.has(id)) return 0;
     seen.add(id);
-    const value = incoming.get(id).length === 0 ? 0 : Math.max(...incoming.get(id).map((from) => depthOf(from, seen) + 1));
-    depth.set(id, value);
+    const preds = incoming.get(id);
+    const value = preds.length === 0 ? 0 : Math.max(...preds.map((p) => columnOf(p, seen) + 1));
+    column.set(id, value);
     return value;
   };
-  for (const node of entry.nodes) depthOf(node.id);
+  for (const id of ids) columnOf(id);
 
-  // stacks the steps that share a column
-  const columns = new Map();
-  for (const node of entry.nodes) {
-    const column = depth.get(node.id);
-    if (!columns.has(column)) columns.set(column, []);
-    columns.get(column).push(node);
+  // pulls each side input right, next to the step it feeds, so its arrow stays short
+  for (const id of ids) {
+    if (incoming.get(id).length > 0 || outgoing.get(id).length === 0) continue;
+    column.set(id, Math.min(...outgoing.get(id).map((t) => column.get(t))) - 1);
   }
+  const first = Math.min(...column.values());
+
+  // places columns left to right; a step lines up with its first input, and clashes move down
+  const y = new Map();
   const nodes = new Map();
-  for (const [column, members] of columns) {
-    const height = members.length * STEP_H + (members.length - 1) * STEP_GAP_Y;
-    members.forEach((step, row) => {
+  const byColumn = [...new Set(column.values())].sort((a, b) => a - b);
+  for (const col of byColumn) {
+    const members = entry.nodes
+      .filter((n) => column.get(n.id) === col)
+      .map((n, order) => {
+        const primary = incoming.get(n.id).find((p) => y.has(p));
+        return { step: n, order, wanted: primary ? y.get(primary) : 0 };
+      })
+      .sort((a, b) => a.wanted - b.wanted || a.order - b.order);
+    let floor = -Infinity;
+    for (const { step, wanted } of members) {
+      const top = Math.max(wanted, floor);
+      floor = top + STEP_PITCH;
+      y.set(step.id, top);
       nodes.set(step.id, {
         node: { id: step.id, type: null },
         step,
         internal: true,
         shape: step.shape ? resolveShape(step.shape, params, globals) : null,
-        x: column * (STEP_W + STEP_GAP_X),
-        y: row * (STEP_H + STEP_GAP_Y) - height / 2,
+        x: (col - first) * (STEP_W + STEP_GAP_X),
+        y: top,
         w: STEP_W,
         h: STEP_H,
         hiddenBy: null,
       });
-    });
+    }
   }
 
+  const known = new Set(ids);
   const edges = entry.edges
-    .filter(([from, to]) => byId.has(from) && byId.has(to))
+    .filter(([from, to]) => known.has(from) && known.has(to))
     .map(([from, to]) => ({ from: { node: from, port: "out" }, to: { node: to, port: "in" } }));
-  return { nodes, groups: [], branchSide: new Map(), toStoredX: (x) => x, edges };
+  return { nodes, groups: [], toStoredX: (x) => x, edges };
 }
 
 /** Returns the canvas point and outward direction of a port. */
 export function portPoint(layout, endpoint, direction) {
   const item = layout.nodes.get(endpoint.node);
   if (!item) return null;
+  const out = direction === "outputs";
 
   // internal steps have one port on each side
   if (item.internal) {
-    const out = direction === "outputs";
     return { x: item.x + (out ? item.w : 0), y: item.y + item.h / 2, nx: out ? 1 : -1, ny: 0, hiddenIn: null };
   }
 
   // a hidden node's edges meet the box of the group that hides it
   if (item.hiddenBy) {
     const box = item.hiddenBy;
-    const out = direction === "outputs";
     return { x: box.x + (out ? box.w : 0), y: box.y + box.h / 2, nx: out ? 1 : -1, ny: 0, hiddenIn: box.group.id };
   }
 
-  // the branch input of an adder comes in from above or below
-  if (item.node.type === "residualAdd" && endpoint.port === "b") {
-    const bottom = layout.branchSide.get(item.node.id) === "bottom";
-    return { x: item.x + item.w / 2, y: item.y + (bottom ? item.h : 0), nx: 0, ny: bottom ? 1 : -1, hiddenIn: null };
+  // an adder takes the branch from the left and the skip from above
+  if (item.node.type === "residualAdd") {
+    const cx = item.x + item.w / 2;
+    const cy = item.y + item.h / 2;
+    if (out) return { x: cx + ADD_R, y: cy, nx: 1, ny: 0, hiddenIn: null };
+    if (endpoint.port === "a") return { x: cx, y: cy - ADD_R, nx: 0, ny: -1, hiddenIn: null };
+    return { x: cx - ADD_R, y: cy, nx: -1, ny: 0, hiddenIn: null };
   }
 
-  const ports = BLOCK_TYPES[item.node.type][direction].filter((p) => !(item.node.type === "residualAdd" && p.id === "b"));
+  const ports = BLOCK_TYPES[item.node.type][direction];
   const index = ports.findIndex((p) => p.id === endpoint.port);
   if (index < 0) return null;
-  const out = direction === "outputs";
   return {
     x: item.x + (out ? item.w : 0),
     y: item.y + (item.h * (index + 1)) / (ports.length + 1),
@@ -188,7 +187,7 @@ export function portPoint(layout, endpoint, direction) {
   };
 }
 
-/** Returns the bounds of everything visible. */
+/** Returns the bounds of everything visible, including the skip lanes above expanded groups. */
 function boundsOf(layout) {
   let minX = Infinity;
   let minY = Infinity;
@@ -200,14 +199,18 @@ function boundsOf(layout) {
     maxX = Math.max(maxX, x + w);
     maxY = Math.max(maxY, y + h);
   };
-  for (const item of layout.nodes.values()) if (!item.hiddenBy) extend(item.x, item.y, item.w, item.h);
+  for (const item of layout.nodes.values()) {
+    if (item.hiddenBy) continue;
+    extend(item.x, item.y, item.w, item.h);
+    if (item.node.type === "residualAdd") extend(item.x, item.y - SKIP_SPACE, item.w, item.h);
+  }
   for (const box of layout.groups) extend(box.x, box.y, box.w, box.h);
   return { minX, minY, maxX, maxY };
 }
 
-/** The view a diagram opens at: full size, starting at the left of the stream. */
+/** The view a diagram opens at: full size, starting at the left of the row. */
 export function homeView(layout, width, height) {
-  const { minX, minY, maxX, maxY } = boundsOf(layout);
+  const { minX, minY, maxY } = boundsOf(layout);
   if (!Number.isFinite(minX)) return { x: 0, y: 0, scale: 1 };
   const margin = 40;
   const spanY = maxY - minY;
@@ -220,22 +223,10 @@ export function homeView(layout, width, height) {
 
 /** Computes the pan and zoom that fit every visible node and group into the given size. */
 export function fitToView(layout, width, height) {
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  const extend = (x, y, w, h) => {
-    minX = Math.min(minX, x);
-    minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x + w);
-    maxY = Math.max(maxY, y + h);
-  };
-
-  for (const item of layout.nodes.values()) if (!item.hiddenBy) extend(item.x, item.y, item.w, item.h);
-  for (const box of layout.groups) extend(box.x, box.y, box.w, box.h);
+  const { minX, minY, maxX, maxY } = boundsOf(layout);
   if (!Number.isFinite(minX)) return { x: 0, y: 0, scale: 1 };
 
-  // Fit shows the whole shape of a model, however long the strip is
+  // Fit shows the whole shape of a model, however long the row is
   const margin = 40;
   const scale = Math.min(1.4, Math.max(0.05, Math.min(
     (width - 2 * margin) / (maxX - minX),
@@ -264,11 +255,10 @@ function ensureLayers(root) {
   };
 }
 
-/** Draws the model graph: group frames, blocks and the stream label. */
+/** Draws the model graph: group frames and blocks. */
 export function renderCanvas(root, model) {
   const layers = ensureLayers(root);
   drawGroupFrames(layers.groups, model);
-  drawStreamLabel(layers.groups, model);
   drawItems(layers, model, buildItems(model));
   return layers;
 }
@@ -286,7 +276,6 @@ export function renderInternals(root, model) {
 export function renderDrag(root, model) {
   const layers = ensureLayers(root);
   drawGroupFrames(layers.groups, model);
-  drawStreamLabel(layers.groups, model);
   const item = model.layout.nodes.get(model.dragId);
   const el = layers.nodes.querySelector(`[data-key="${CSS.escape(`node:${model.dragId}`)}"]`);
   if (item && el) {
@@ -294,15 +283,6 @@ export function renderDrag(root, model) {
     el.classList.add("is-dragging");
   }
   return layers;
-}
-
-/** Names the residual stream once, under its first stretch. */
-function drawStreamLabel(layer, { graph, layout }) {
-  const embed = layout.nodes.get("embed");
-  if (!embed || embed.hiddenBy) return;
-  const d = graph.globals?.d ?? BLOCK_TYPES.embedding.params.d.default;
-  const label = svg("text", { class: "stream-label", x: embed.x + embed.w + 24, y: embed.y + embed.h / 2 + 26 }, layer);
-  label.textContent = `residual stream [B, T, ${d}]`;
 }
 
 /** Lists what the nodes layer should contain, top-level blocks and collapsed groups alike. */
@@ -313,6 +293,14 @@ function buildItems({ layout }) {
   ].sort((a, b) => a.item.x - b.item.x || a.item.y - b.item.y);
 }
 
+/** Draws a small square button with a plus or minus sign. */
+function drawButton(parent, attrs, x, y, sign) {
+  const button = svg("g", { ...attrs, tabindex: 0, role: "button", transform: `translate(${x} ${y})` }, parent);
+  svg("rect", { class: "button-body", width: BUTTON, height: BUTTON, rx: 3 }, button);
+  svg("path", { class: "button-sign", d: sign === "+" ? "M 6 11 H 16 M 11 6 V 16" : "M 6 11 H 16" }, button);
+  return button;
+}
+
 /** Draws the frames of expanded groups behind their blocks. */
 function drawGroupFrames(layer, { layout, selection }) {
   layer.replaceChildren();
@@ -321,32 +309,20 @@ function drawGroupFrames(layer, { layout, selection }) {
     const { group } = box;
     const selected = selection?.kind === "group" && selection.id === group.id;
     const g = svg("g", { class: `group-frame-wrap${selected ? " is-selected" : ""}`, transform: `translate(${box.x} ${box.y})` }, layer);
-    svg("path", { class: "group-frame", d: boxPath(`frame:${group.id}`, box.w, box.h) }, g);
+    svg("rect", { class: "group-frame", width: box.w, height: box.h, rx: 6 }, g);
 
     const header = svg("g", {
       class: "group-header", tabindex: 0, role: "button",
       "data-key": `group:${group.id}`, "data-group": group.id,
       "aria-label": `${group.label}, repeated ${group.repeat} times, expanded`,
     }, g);
-    svg("rect", { width: box.w - 60, height: 28, x: 10, y: 3, rx: 4 }, header);
-    svg("text", { class: "group-label", x: 20, y: 23 }, header).textContent = `${group.label} · repeated ${group.repeat} times`;
-    drawGroupToggle(g, box, false);
+    svg("rect", { width: box.w - 56, height: 24, x: 8, y: 4, rx: 3 }, header);
+    svg("text", { class: "group-label", x: 16, y: 21 }, header).textContent = `${group.label} · repeated ${group.repeat} times`;
+    drawButton(g, {
+      class: "group-toggle", "data-action": "toggle-group", "data-group": group.id,
+      "aria-expanded": "true", "aria-label": `Collapse ${group.label}`,
+    }, box.w - 34, 5, "−");
   }
-}
-
-/** Draws the expand or collapse button of a group. */
-function drawGroupToggle(parent, box, collapsed) {
-  const { group } = box;
-  const toggle = svg("g", {
-    class: "group-toggle", tabindex: 0, role: "button",
-    "data-action": "toggle-group", "data-group": group.id,
-    "aria-expanded": String(!collapsed),
-    "aria-label": `${collapsed ? "Expand" : "Collapse"} ${group.label}`,
-    transform: `translate(${box.w - 40} 8)`,
-  }, parent);
-  svg("rect", { class: "node-hit", width: 26, height: 26, rx: 5 }, toggle);
-  svg("path", { d: boxPath(`toggle:${group.id}:${collapsed}`, 26, 26) }, toggle);
-  svg("text", { x: 13, y: 19, "text-anchor": "middle" }, toggle).textContent = collapsed ? "+" : "−";
 }
 
 /** Draws the given items, reusing elements by key so preset switches can animate. */
@@ -403,19 +379,21 @@ function drawCollapsedGroup(el, box, { selection }) {
   el.setAttribute("aria-label", `${group.label}, repeated ${group.repeat} times, collapsed, ${formatCount(perRepeat * group.repeat)} parameters`);
   el.replaceChildren();
 
-  svg("rect", { class: "node-hit", width: box.w + 12, height: box.h + 12, rx: 8 }, el);
-  svg("path", { class: "group-stack", d: boxPath(`stack2:${group.id}`, box.w, box.h), transform: "translate(10 10)" }, el);
-  svg("path", { class: "group-stack", d: boxPath(`stack1:${group.id}`, box.w, box.h), transform: "translate(5 5)" }, el);
-  svg("path", { class: "group-body", d: boxPath(`box:${group.id}`, box.w, box.h) }, el);
-  svg("text", { class: "group-title", x: 18, y: 34 }, el).textContent = group.label;
-  svg("text", { class: "group-meta", x: 18, y: 58 }, el).textContent = `× ${group.repeat} · ${members.length} blocks each`;
-  svg("text", { class: "group-meta", x: 18, y: 80 }, el).textContent = `${formatCount(perRepeat * group.repeat)} parameters`;
-  drawGroupToggle(el, box, true);
+  svg("rect", { class: "group-stack", x: 8, y: 8, width: box.w, height: box.h, rx: 3 }, el);
+  svg("rect", { class: "group-stack", x: 4, y: 4, width: box.w, height: box.h, rx: 3 }, el);
+  svg("rect", { class: "group-body", width: box.w, height: box.h, rx: 3 }, el);
+  svg("text", { class: "group-title", x: 16, y: 27 }, el).textContent = group.label;
+  svg("text", { class: "group-meta", x: 16, y: 47 }, el).textContent = `× ${group.repeat} · ${members.length} blocks each`;
+  svg("text", { class: "group-meta", x: 16, y: 63 }, el).textContent = `${formatCount(perRepeat * group.repeat)} parameters`;
+  drawButton(el, {
+    class: "group-toggle", "data-action": "toggle-group", "data-group": group.id,
+    "aria-expanded": "false", "aria-label": `Expand ${group.label}`,
+  }, box.w - 32, 10, "+");
 }
 
 /** Draws one block with its ports and warnings. */
 function drawNode(el, item, model) {
-  const { graph, selection, warnings, missing } = model;
+  const { graph, selection, warnings } = model;
   const { node } = item;
   const type = BLOCK_TYPES[node.type];
   const count = countBlockParams(node.type, node.params);
@@ -432,38 +410,32 @@ function drawNode(el, item, model) {
   el.setAttribute("aria-label", `${type.name} (${node.id}), ${formatCount(count)} parameters${warn ? ", has a problem" : ""}`);
   el.replaceChildren();
 
-  // hand-drawn outlines are open strokes, so a transparent shape behind them catches pointers
-  if (isAdd) svg("circle", { class: "node-hit", cx: item.w / 2, cy: item.h / 2, r: item.w / 2 }, el);
-  else svg("rect", { class: "node-hit", width: item.w, height: item.h, rx: 6 }, el);
-
   // an adder is a circle with a plus, everything else is a labelled box
   if (isAdd) {
-    svg("path", { class: "node-body", d: circlePath(`add:${node.id}`, item.w / 2) }, el);
-    svg("text", { class: "adder-sign", x: item.w / 2, y: item.h / 2 + 7, "text-anchor": "middle" }, el).textContent = "+";
+    const c = item.w / 2;
+    svg("rect", { class: "node-hit", width: item.w, height: item.h }, el);
+    svg("circle", { class: "node-body", cx: c, cy: c, r: ADD_R }, el);
+    svg("path", { class: "adder-sign", d: `M ${c - 8} ${c} H ${c + 8} M ${c} ${c - 8} V ${c + 8}` }, el);
   } else {
-    svg("path", { class: "node-body", d: boxPath(`node:${node.id}`, item.w, item.h) }, el);
+    svg("rect", { class: "node-body", width: item.w, height: item.h, rx: 3 }, el);
+    svg("rect", { class: "node-accent", x: 0, y: 0, width: 3, height: item.h }, el);
     svg("text", { class: "node-title", x: 14, y: 22 }, el).textContent = type.name;
     const output = type.outputs[0];
     const outShape = output ? formatShape(portShape(graph, node.id, output.id, "outputs")) : "";
     svg("text", { class: "node-meta", x: 14, y: 40 }, el).textContent = `${outShape} · ${formatCount(count)}`;
     if (internalsFor(node.type, node.params)) {
-      const open = svg("g", {
-        class: "sub-toggle", tabindex: 0, role: "button",
-        "data-action": "open-block", "data-node": node.id,
+      drawButton(el, {
+        class: "sub-toggle", "data-action": "open-block", "data-node": node.id,
         "aria-label": `Open the inside of ${type.name}`,
-        transform: `translate(${item.w - 32} 14)`,
-      }, el);
-      svg("rect", { class: "node-hit", width: 24, height: 24, rx: 5 }, open);
-      svg("path", { d: boxPath(`open:${node.id}`, 24, 24) }, open);
-      svg("text", { x: 12, y: 17, "text-anchor": "middle" }, open).textContent = "+";
+      }, item.w - 32, 15, "+");
     }
   }
 
   drawPorts(el, item, model);
 
   if (warn) {
-    const badge = svg("g", { class: "node-warning", transform: `translate(${item.w - 2} 2)`, "aria-hidden": "true" }, el);
-    svg("path", { d: circlePath(`warn:${node.id}`, 9), transform: "translate(-9 -9)" }, badge);
+    const badge = svg("g", { class: "node-warning", transform: `translate(${item.w} 0)`, "aria-hidden": "true" }, el);
+    svg("circle", { r: 8 }, badge);
     svg("text", { y: 4, "text-anchor": "middle" }, badge).textContent = "!";
   }
 }
@@ -472,13 +444,14 @@ function drawNode(el, item, model) {
 function drawPorts(el, item, { graph, missing }) {
   const { node } = item;
   const type = BLOCK_TYPES[node.type];
+  const single = { nodes: new Map([[node.id, item]]) };
   for (const [direction, ports] of [["inputs", type.inputs], ["outputs", type.outputs]]) {
     for (const port of ports) {
-      const point = portPoint({ nodes: new Map([[node.id, item]]), branchSide: new Map([[node.id, "top"]]) }, { node: node.id, port: port.id }, direction);
+      const point = portPoint(single, { node: node.id, port: port.id }, direction);
       const isMissing = direction === "inputs" && missing.has(`${node.id}:${port.id}`);
       const circle = svg("circle", {
         class: ["port", direction === "inputs" ? "port-in" : "port-out", port.external && "port-external", isMissing && "port-missing"].filter(Boolean).join(" "),
-        cx: point.x - item.x, cy: point.y - item.y, r: 6,
+        cx: point.x - item.x, cy: point.y - item.y, r: PORT_R,
         "data-node": node.id, "data-port": port.id,
       }, el);
       const shape = formatShape(portShape(graph, node.id, port.id, direction));
@@ -501,23 +474,20 @@ function drawStep(el, item, { selection }) {
   el.setAttribute("aria-label", `${step.name}${step.drill ? ", opens further" : ""}`);
   el.replaceChildren();
 
-  svg("rect", { class: "node-hit", width: item.w, height: item.h, rx: 6 }, el);
-  svg("path", { class: "node-body", d: boxPath(`step:${step.id}`, item.w, item.h) }, el);
-  svg("text", { class: "node-title", x: 14, y: 23 }, el).textContent = step.name;
-  svg("text", { class: "node-meta", x: 14, y: 43 }, el).textContent = step.equation ?? (item.shape ? formatShape(item.shape) : "");
+  svg("rect", { class: "node-body", width: item.w, height: item.h, rx: 3 }, el);
+  svg("text", { class: "node-title", x: 14, y: 24 }, el).textContent = step.name;
+
+  // shortens a line that would run past the card, keeping the whole of it on hover
+  const line = step.equation ?? (item.shape ? formatShape(item.shape) : "");
+  const room = Math.floor((item.w - 14 - (step.drill ? 40 : 12)) / MONO_CHAR);
+  const meta = svg("text", { class: "node-meta", x: 14, y: 44 }, el);
+  meta.textContent = line.length > room ? `${line.slice(0, room - 1)}…` : line;
+  if (line.length > room) svg("title", {}, meta).textContent = line;
 
   if (step.drill) {
-    const open = svg("g", {
-      class: "sub-toggle", tabindex: 0, role: "button",
-      "data-action": "open-step", "data-drill": step.drill,
+    drawButton(el, {
+      class: "sub-toggle", "data-action": "open-step", "data-drill": step.drill,
       "aria-label": `Open the inside of ${step.name}`,
-      transform: `translate(${item.w - 32} 18)`,
-    }, el);
-    svg("rect", { class: "node-hit", width: 24, height: 24, rx: 5 }, open);
-    svg("path", { d: boxPath(`drill:${step.id}`, 24, 24) }, open);
-    svg("text", { x: 12, y: 17, "text-anchor": "middle" }, open).textContent = "+";
+    }, item.w - 32, 19, "+");
   }
-
-  svg("circle", { class: "port port-in", cx: 0, cy: item.h / 2, r: 4 }, el);
-  svg("circle", { class: "port port-out", cx: item.w, cy: item.h / 2, r: 4 }, el);
 }

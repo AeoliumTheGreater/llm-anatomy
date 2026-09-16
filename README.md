@@ -1,8 +1,9 @@
 # LLM Anatomy
 
-An interactive blueprint of a language model. The residual stream runs left to
-right; each layer taps it, does its work above or below the line, and adds the
-result back. Every block opens up: its steps, their tensor shapes, and the
+An interactive blueprint of a language model. Each layer sits on one row, read
+left to right: norm, attention, add, norm, MLP, add. The residual skip around
+each sub-layer runs in a lane above it and drops into the adder, and connections
+never cross. Every block opens up: its steps, their tensor shapes, and the
 equations behind them, each with a source link.
 
 Three read-only presets ship with it: Qwen2.5-0.5B, Qwen3-1.7B and Qwen3.5-0.8B.
@@ -63,8 +64,7 @@ moving to a block off screen pans the canvas to it.
 | `src/diff.js` | Differences between two graphs |
 | `src/storage.js` | Local persistence, import and export |
 | `src/presets/` | The three Qwen presets and the shared decoder-layer builder |
-| `src/view/sketch.js` | Hand-drawn strokes: seeded, so a block wobbles the same way every redraw |
-| `src/view/` | Canvas, arrows, inspector, palette and difference panel |
+| `src/view/` | Canvas, right-angled arrow routing, inspector, palette and difference panel |
 | `tools/` | Browser and timing checks driven through Chrome |
 | `test/` | `node --test` suites for the pure modules |
 
@@ -84,8 +84,3 @@ Parameter totals are tested exactly against hand counts:
 | Qwen3.5-0.8B | 752,393,024 | Text model only; excludes the vision encoder and multi-token prediction head |
 
 All three models tie the output layer to the embedding, so it is counted once.
-
-## Font
-
-`assets/fonts/architects-daughter.woff2` is Architects Daughter, used under the
-SIL Open Font License; the licence text sits beside it in `assets/fonts/OFL.txt`.

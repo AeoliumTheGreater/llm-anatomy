@@ -132,7 +132,6 @@ await step("the model reads left to right", async () => {
   const sampling = await rect('[data-key="node:sampling"]');
   check("the stream runs left to right", embed.x < group.x && group.x < sampling.x, `${Math.round(embed.x)} < ${Math.round(group.x)} < ${Math.round(sampling.x)}`);
   check("blocks stay on one line", Math.abs(embed.cy - sampling.cy) < 4, `${Math.round(embed.cy)} vs ${Math.round(sampling.cy)}`);
-  check("the residual stream is named", (await text(".stream-label"))?.startsWith("residual stream"), await text(".stream-label"));
   check("every connection has an arrowhead", (await count(".edge")) === (await count(".edge-head")) && (await count(".edge")) > 0);
   check("the palette lists every block type", (await count(".palette-item")) === 15, String(await count(".palette-item")));
   await shot("01-collapsed");
@@ -143,14 +142,20 @@ await step("group expansion", async () => {
   check("expanding shows one repeat of six blocks", (await count(".layer-nodes > [data-key]")) === 10);
   check("the frame says repeated 28 times", (await text(".group-label"))?.includes("repeated 28 times"), await text(".group-label"));
   check("both adders are drawn as circles", (await count(".node.is-adder")) === 2);
-  const attn = await rect('[data-key="node:layer.attn"]');
-  const mlp = await rect('[data-key="node:layer.mlp"]');
-  const add = await rect('[data-key="node:layer.add1"]');
-  check("the attention branch sits above the stream", attn.cy < add.cy, `${Math.round(attn.cy)} < ${Math.round(add.cy)}`);
-  check("the MLP branch sits below the stream", mlp.cy > add.cy, `${Math.round(mlp.cy)} > ${Math.round(add.cy)}`);
+  const attn = await rect('[data-key="node:layer.attn"] .node-body');
+  const mlp = await rect('[data-key="node:layer.mlp"] .node-body');
+  const add = await rect('[data-key="node:layer.add1"] .node-body');
+  check("the whole layer sits on one row", Math.abs(attn.cy - add.cy) < 2 && Math.abs(mlp.cy - add.cy) < 2, `${Math.round(attn.cy)}, ${Math.round(add.cy)}, ${Math.round(mlp.cy)}`);
+  check("both skips are labelled residual", (await count(".edge-label")) === 2, String(await count(".edge-label")));
+  check("a dot marks where each skip leaves the line", (await count(".edge-junction")) >= 2, String(await count(".edge-junction")));
+  check("the longest block title fits before its button", await evaluate(`document.querySelector('[data-key="node:layer.attn"] .node-title').getComputedTextLength() < 240 - 32 - 14 - 4`));
+  const skipLabel = await rect(".edge-label");
+  check("the skip lanes run above the row", skipLabel.cy < add.y, `${Math.round(skipLabel.cy)} < ${Math.round(add.y)}`);
+  await focusItem("node:layer.attn");
+  await shot("02-expanded");
   await evaluate("document.querySelector('[data-zoom=fit]').click()");
   await sleep(150);
-  await shot("02-expanded");
+  await shot("02-expanded-fit");
 });
 
 await step("opening a block and a step inside it", async () => {

@@ -1,28 +1,21 @@
-/* blueprint: white pen on blue paper */
-@font-face {
-  font-family: "Architects Daughter";
-  src: url("assets/fonts/architects-daughter.woff2") format("woff2");
-  font-display: swap;
-}
-
+/* blueprint: white ink on blue paper, drawn cleanly */
 :root {
   color-scheme: dark;
   --paper: #0f2f5e;
   --paper-deep: #0b2447;
-  --panel: #10345f;
   --raised: #14406f;
+  --box: rgb(11 36 71 / 0.85);
   --ink: #f2f6ff;
   --ink-soft: #b9cdec;
   --rule: #6f96cc;
-  --grid-fine: rgb(255 255 255 / 0.07);
-  --grid-major: rgb(255 255 255 / 0.16);
+  --grid-fine: rgb(255 255 255 / 0.045);
+  --grid-major: rgb(255 255 255 / 0.1);
   --accent: #8fe3ff;
-  --accent-soft: #1b5487;
   --focus: #8fe3ff;
   --danger: #ff9a8b;
   --danger-soft: #5a2230;
   --warn: #ffd166;
-  --edge: #dbe6fb;
+  --edge: #e4ecfb;
   --edge-grouped: #93aed6;
   --cat-input: #9fe8c6;
   --cat-normalisation: #9ad7ff;
@@ -30,8 +23,7 @@
   --cat-channel-mixing: #ffd08a;
   --cat-residual: #c6f5a0;
   --cat-output: #ffb3c9;
-  --hand: "Architects Daughter", "Comic Neue", "Segoe Print", cursive;
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Menlo, Consolas, monospace;
 }
 
@@ -64,9 +56,8 @@ select {
 button {
   padding: 4px 10px;
   border: 1px solid var(--rule);
-  border-radius: 2px;
+  border-radius: 3px;
   background: transparent;
-  font-family: var(--hand);
   cursor: pointer;
 }
 button:hover:not(:disabled) {
@@ -84,25 +75,17 @@ button:disabled {
 a {
   color: var(--accent);
 }
-h1,
-h2,
-h3,
-.preset,
-.breadcrumb,
-.chip {
-  font-family: var(--hand);
-}
 h2 {
   margin: 0 0 4px;
-  font-size: 1.35rem;
-  font-weight: 400;
+  font-size: 1.2rem;
+  font-weight: 600;
 }
 h3 {
   margin: 18px 0 6px;
   color: var(--ink-soft);
-  font-size: 0.95rem;
-  font-weight: 400;
-  letter-spacing: 0.04em;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 .muted {
@@ -139,9 +122,10 @@ h3 {
 }
 .title {
   margin: 0;
-  font-size: 1.3rem;
-  font-weight: 400;
-  letter-spacing: 0.04em;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 .presets {
   display: inline-flex;
@@ -149,7 +133,7 @@ h3 {
   gap: 4px;
   padding: 2px;
   border: 1px solid var(--rule);
-  border-radius: 2px;
+  border-radius: 3px;
 }
 .preset {
   border-color: transparent;
@@ -157,13 +141,16 @@ h3 {
 .preset[aria-pressed="true"] {
   border-color: var(--ink);
   background: rgb(255 255 255 / 0.12);
+  font-weight: 600;
 }
 .badge {
-  padding: 2px 10px;
-  border: 1px dashed var(--accent);
+  padding: 1px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
   color: var(--accent);
-  font-family: var(--hand);
-  font-size: 0.9rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 .actions {
   display: flex;
@@ -224,7 +211,9 @@ h3 {
   gap: 6px;
   padding: 4px 10px;
   border: 1px solid var(--rule);
-  background: rgb(11 36 71 / 0.85);
+  border-radius: 3px;
+  background: rgb(11 36 71 / 0.9);
+  font-size: 0.85rem;
 }
 .breadcrumb button {
   border: 0;
@@ -233,7 +222,7 @@ h3 {
   text-decoration: underline;
 }
 .breadcrumb .here {
-  color: var(--ink);
+  font-weight: 600;
 }
 .zoom-controls {
   position: absolute;
@@ -241,6 +230,9 @@ h3 {
   bottom: 12px;
   display: flex;
   gap: 4px;
+}
+.zoom-controls button {
+  background: var(--paper-deep);
 }
 .status {
   position: absolute;
@@ -251,6 +243,7 @@ h3 {
   margin: 0;
   padding: 8px 12px;
   border: 1px solid var(--rule);
+  border-radius: 3px;
   background: var(--paper-deep);
   white-space: pre-line;
 }
@@ -264,56 +257,52 @@ h3 {
   cursor: pointer;
 }
 .node-hit {
-  fill: rgb(15 47 94 / 0.5);
-  stroke: none;
+  fill: transparent;
 }
 .node-body {
-  fill: none;
+  fill: var(--box);
   stroke: var(--ink);
-  stroke-width: 1.7;
-  stroke-linecap: round;
+  stroke-width: 1.4;
 }
 .node:hover .node-body {
-  stroke-width: 2.4;
+  stroke: var(--accent);
 }
 .node.is-selected .node-body {
   stroke: var(--accent);
-  stroke-width: 2.6;
+  stroke-width: 2.2;
 }
 .node:focus-visible .node-body {
   stroke: var(--focus);
-  stroke-width: 3;
+  stroke-width: 2.6;
 }
 .node.is-dragging {
   opacity: 0.85;
 }
-.node-title {
+.node-accent {
   fill: var(--cat, var(--ink));
-  font: 15px var(--hand);
+}
+.node-title {
+  fill: var(--ink);
+  font: 600 11px var(--sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 .node-meta {
   fill: var(--ink-soft);
   font: 11px var(--mono);
 }
-.is-step .node-title {
-  fill: var(--ink);
-}
 .is-step .node-meta {
   fill: var(--accent);
-  font: 12px var(--hand);
 }
 .adder-sign {
-  fill: var(--ink);
-  font: 22px var(--hand);
-}
-.stream-label {
-  fill: var(--ink-soft);
-  font: 14px var(--hand);
+  stroke: var(--ink);
+  stroke-width: 1.6;
+  stroke-linecap: round;
 }
 .port {
   fill: var(--paper-deep);
   stroke: var(--ink);
-  stroke-width: 1.4;
+  stroke-width: 1.2;
 }
 .port-out {
   cursor: crosshair;
@@ -325,38 +314,44 @@ h3 {
   fill: var(--warn);
   stroke: var(--warn);
 }
-.node-warning path {
+.node-warning circle {
   fill: var(--warn);
-  stroke: var(--warn);
 }
 .node-warning text {
   fill: var(--paper-deep);
   font: 700 11px var(--sans);
 }
-.sub-toggle path,
-.group-toggle path {
-  fill: rgb(255 255 255 / 0.06);
+.button-body {
+  fill: var(--paper-deep);
+  stroke: var(--rule);
+  stroke-width: 1.2;
+}
+.button-sign {
   stroke: var(--ink);
-  stroke-width: 1.5;
+  stroke-width: 1.6;
+  stroke-linecap: round;
 }
-.sub-toggle text,
-.group-toggle text {
-  fill: var(--ink);
-  font: 17px var(--hand);
+.sub-toggle,
+.group-toggle {
+  cursor: pointer;
 }
-.sub-toggle:focus-visible path,
-.group-toggle:focus-visible path,
+.sub-toggle:hover .button-body,
+.group-toggle:hover .button-body {
+  stroke: var(--ink);
+}
+.sub-toggle:focus-visible .button-body,
+.group-toggle:focus-visible .button-body,
 .group-header:focus-visible rect {
   stroke: var(--focus);
-  stroke-width: 2.5;
+  stroke-width: 2.2;
 }
 
 /* repeated groups */
 .group-frame {
-  fill: rgb(255 255 255 / 0.03);
+  fill: rgb(255 255 255 / 0.025);
   stroke: var(--rule);
-  stroke-width: 1.5;
-  stroke-dasharray: 9 6;
+  stroke-width: 1.2;
+  stroke-dasharray: 8 5;
 }
 .group-frame-wrap.is-selected .group-frame {
   stroke: var(--accent);
@@ -366,79 +361,99 @@ h3 {
 }
 .group-header rect {
   fill: transparent;
+  stroke: none;
 }
 .group-label {
   fill: var(--ink-soft);
-  font: 15px var(--hand);
+  font: 600 11px var(--sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 .group-box {
   cursor: pointer;
 }
-.group-stack,
 .group-body {
   fill: var(--paper-deep);
   stroke: var(--ink);
-  stroke-width: 1.7;
+  stroke-width: 1.4;
 }
 .group-stack {
-  fill: rgb(11 36 71 / 0.7);
+  fill: var(--paper-deep);
   stroke: var(--rule);
+  stroke-width: 1;
 }
 .group-box.is-selected .group-body {
   stroke: var(--accent);
-  stroke-width: 2.6;
+  stroke-width: 2.2;
 }
 .group-box:focus-visible .group-body {
   stroke: var(--focus);
-  stroke-width: 3;
+  stroke-width: 2.6;
 }
 .group-title {
   fill: var(--ink);
-  font: 17px var(--hand);
+  font: 600 12px var(--sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 .group-meta {
   fill: var(--ink-soft);
-  font: 12px var(--mono);
+  font: 11px var(--mono);
 }
 
 /* arrows */
-.edge-line,
-.edge-head {
+.edge-line {
   fill: none;
   stroke: var(--edge);
-  stroke-width: 1.7;
-  stroke-linecap: round;
+  stroke-width: 1.4;
+}
+.edge-head,
+.edge-junction {
+  fill: var(--edge);
+  stroke: none;
+}
+.edge-label {
+  fill: var(--ink-soft);
+  font: 600 10px var(--sans);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 .edge-hit {
   fill: none;
   stroke: transparent;
-  stroke-width: 14;
+  stroke-width: 12;
   cursor: pointer;
   pointer-events: stroke;
 }
-.edge:hover .edge-line,
-.edge:hover .edge-head {
+.edge:hover .edge-line {
   stroke: #ffffff;
 }
 .edge.is-grouped .edge-line {
   stroke: var(--edge-grouped);
-  stroke-dasharray: 7 5;
+  stroke-dasharray: 6 4;
 }
-.edge.is-selected .edge-line,
-.edge.is-selected .edge-head {
+.edge.is-grouped .edge-head {
+  fill: var(--edge-grouped);
+}
+.edge.is-selected .edge-line {
   stroke: var(--accent);
-  stroke-width: 2.6;
+  stroke-width: 2.2;
 }
-.edge.is-invalid .edge-line,
-.edge.is-invalid .edge-head {
+.edge.is-selected .edge-head {
+  fill: var(--accent);
+}
+.edge.is-invalid .edge-line {
   stroke: var(--danger);
   stroke-dasharray: 5 4;
+}
+.edge.is-invalid .edge-head {
+  fill: var(--danger);
 }
 .edge-pending {
   fill: none;
   stroke: var(--accent);
-  stroke-width: 2;
-  stroke-dasharray: 7 5;
+  stroke-width: 1.6;
+  stroke-dasharray: 6 4;
   pointer-events: none;
 }
 
@@ -478,9 +493,9 @@ h3 {
 .eyebrow {
   margin: 0 0 2px;
   color: var(--ink-soft);
-  font-family: var(--hand);
-  font-size: 0.95rem;
-  letter-spacing: 0.04em;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 .eyebrow.cat-text {
@@ -495,7 +510,8 @@ h3 {
 .equation {
   margin: 10px 0 0;
   padding: 8px 10px;
-  border: 1px dashed var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
   font-family: var(--mono);
   font-size: 0.95em;
 }
@@ -522,7 +538,7 @@ h3 {
   list-style: none;
 }
 .chip {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 .chip[aria-current="true"] {
   border-color: var(--accent);
@@ -571,7 +587,7 @@ tr.is-missing td {
   width: 100%;
   padding: 5px 8px;
   border: 1px solid var(--rule);
-  border-radius: 2px;
+  border-radius: 3px;
   background: var(--raised);
 }
 .param input[aria-invalid="true"] {
@@ -604,7 +620,6 @@ tr.is-missing td {
   border: 0;
   background: none;
   color: var(--accent);
-  font-family: inherit;
   text-align: left;
   text-decoration: underline;
 }
@@ -633,6 +648,11 @@ tr.is-missing td {
 }
 
 /* palette */
+.palette h2 {
+  font-size: 0.95rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 .palette-list {
   display: grid;
   gap: 4px;
@@ -642,7 +662,7 @@ tr.is-missing td {
 }
 .palette-item {
   width: 100%;
-  border-left: 4px solid var(--cat);
+  border-left: 3px solid var(--cat);
   text-align: left;
   cursor: grab;
 }
@@ -658,6 +678,7 @@ tr.is-missing td {
   overflow: auto;
   padding: 12px 16px 16px;
   border: 1px solid var(--ink);
+  border-radius: 3px;
   background: var(--paper-deep);
   box-shadow: 0 12px 40px rgb(0 0 0 / 0.4);
 }
@@ -673,7 +694,7 @@ tr.is-missing td {
 .diff-header select {
   padding: 4px 8px;
   border: 1px solid var(--rule);
-  border-radius: 2px;
+  border-radius: 3px;
   background: var(--raised);
 }
 .diff-close {

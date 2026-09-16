@@ -115,7 +115,7 @@ async function measure(label, from) {
 const dragged = '[data-key="node:layer.l10.mlp"]';
 await focusItem("node:layer.l10.mlp");
 const before = await evaluate(`document.querySelector('${dragged}').style.transform`);
-await measure("drag a block", await centreOf(`${dragged} .node-hit`));
+await measure("drag a block", await centreOf(`${dragged} .node-body`));
 const after = await evaluate(`document.querySelector('${dragged}').style.transform`);
 console.log(before === after ? `DRAG DID NOT MOVE THE BLOCK (${before})` : `block moved: ${before} → ${after}`);
 
