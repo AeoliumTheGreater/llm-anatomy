@@ -157,7 +157,10 @@ await step("group expansion", async () => {
   const mlp = await rect('[data-key="node:layer.mlp"] .node-body');
   const add = await rect('[data-key="node:layer.add1"] .node-body');
   check("the whole layer sits on one row", Math.abs(attn.cy - add.cy) < 2 && Math.abs(mlp.cy - add.cy) < 2, `${Math.round(attn.cy)}, ${Math.round(add.cy)}, ${Math.round(mlp.cy)}`);
-  check("both skips are labelled residual", (await count(".edge-label")) === 2, String(await count(".edge-label")));
+  check("both skips are labelled", (await count(".edge-label")) === 2, String(await count(".edge-label")));
+  check("the skip label says x passes unchanged", (await text(".edge-label"))?.includes("unchanged"), await text(".edge-label"));
+  await clickIn("group:layer", "rect");
+  check("the group explains how a layer adds to the stream", (await text(".inspector"))?.includes("x′ = h + MLP(RMSNorm(h))"), "");
   check("a dot marks where each skip leaves the line", (await count(".edge-junction")) >= 2, String(await count(".edge-junction")));
   check("the longest block title fits before its button", await evaluate(`document.querySelector('[data-key="node:layer.attn"] .node-title').getComputedTextLength() < 240 - 32 - 14 - 4`));
   const skipLabel = await rect(".edge-label");

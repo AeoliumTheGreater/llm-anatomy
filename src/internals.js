@@ -29,9 +29,9 @@ export const INTERNALS = {
 
   residualAdd: {
     nodes: [
-      step("stream", "residual stream", ["B", "T", "d"], `What every earlier block has written so far (${link("Vaswani et al.", SRC.vaswani)}).`),
-      step("branch", "branch output", ["B", "T", "d"], "What this sub-layer computed from the normalised stream."),
-      step("add", "add", ["B", "T", "d"], `Plain addition, so gradients reach every earlier block directly (${link("pre-norm placement", SRC.preNorm)}).`, { equation: "x ← x + branch(norm(x))" }),
+      step("stream", "x, the residual stream", ["B", "T", "d"], `The running vector for each token: the embedding plus every update added before this point (${link("Vaswani et al.", SRC.vaswani)}). This copy skips the sub-layer unchanged.`, { equation: "x" }),
+      step("branch", "sub-layer update", ["B", "T", "d"], `The sub-layer's output, computed from a normalised copy of the same x (${link("Qwen3.5 code", SRC.qwen35Code)}).`, { equation: "F(RMSNorm(x))" }),
+      step("add", "add, giving the new x", ["B", "T", "d"], `Plain addition. The sum replaces x and is what the next sub-layer receives, so every update stays in the running total and gradients reach every earlier block directly (${link("pre-norm", SRC.preNorm)}).`, { equation: "x ← x + F(RMSNorm(x))" }),
     ],
     edges: [["stream", "add"], ["branch", "add"]],
   },

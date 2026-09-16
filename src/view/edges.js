@@ -178,7 +178,7 @@ function drawRoute(g, route, fanOut) {
   if (Math.abs(laneEnd[0] - laneStart[0]) >= LABEL_MIN) {
     svg("text", {
       class: "edge-label", x: (laneStart[0] + laneEnd[0]) / 2, y: laneStart[1] - 7, "text-anchor": "middle",
-    }, g).textContent = "residual";
+    }, g).textContent = "skip: x unchanged";
   }
 }
 

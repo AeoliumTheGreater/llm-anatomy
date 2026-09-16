@@ -74,9 +74,10 @@ export const BLOCK_TYPES = {
     inputs: [{ id: "a", shape: STREAM }, { id: "b", shape: STREAM }],
     outputs: [{ id: "y", shape: STREAM }],
     description:
-      `Adds a sub-layer's output back into the residual stream, as in ${link("the Transformer", SRC.vaswani)}, so every layer reads from and writes to the same running vector. ` +
-      `Qwen models normalise inside the branch before each sub-layer (pre-norm); ${link("Pre-LN Transformers have well-behaved gradients at initialisation", SRC.preNorm)}.`,
-    sources: [SRC.vaswani, SRC.preNorm],
+      "The residual stream is one running vector x per token. A sub-layer reads a normalised copy of x and computes an update; this block adds that update back, so x ← x + F(RMSNorm(x)). " +
+      `The sum simply becomes the new x: the next sub-layer reads it and adds to it in turn, and nothing is sent down a second path (${link("Qwen3.5 code", SRC.qwen35Code)}). ` +
+      `Each layer has two adds, one after the mixer and one after the MLP, as in ${link("the Transformer", SRC.vaswani)} with the norm moved inside the branch (${link("pre-norm", SRC.preNorm)}).`,
+    sources: [SRC.vaswani, SRC.preNorm, SRC.qwen35Code],
   },
 
   attention: {
