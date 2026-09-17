@@ -12,9 +12,10 @@ import { PRESET as QWEN2_5 } from "./presets/qwen2_5_0_5b.js";
 import { PRESET as QWEN3 } from "./presets/qwen3_1_7b.js";
 import { PRESET as QWEN3_5 } from "./presets/qwen3_5_0_8b.js";
 import {
-  layoutGraph, layoutInternals, renderCanvas, renderInternals, renderDrag, fitToView, portPoint,
+  layoutGraph, layoutInternals, renderCanvas, renderInternals, renderDrag, fitToView, homeView, portPoint,
   GRID, NODE_W, NODE_H,
 } from "./view/canvas.js";
+import { renderTooltip, placeTooltip } from "./view/tooltip.js";
 import { renderEdges, renderPendingEdge, updateEdgesFor } from "./view/edges.js";
 import { renderInspector } from "./view/inspector.js";
 import { renderPalette, BLOCK_MIME } from "./view/palette.js";
@@ -43,6 +44,7 @@ const dom = {
   svg: document.querySelector(".canvas"),
   breadcrumb: document.querySelector(".breadcrumb"),
   legend: document.querySelector(".legend"),
+  tooltip: document.querySelector(".tooltip"),
   zoom: document.querySelector(".zoom-controls"),
   status: document.querySelector(".status"),
   inspector: document.querySelector(".inspector"),
@@ -217,7 +219,7 @@ function goToLevel(index) {
 /** Redraws after moving between levels and fits the whole new row on screen. */
 function afterDrillChange() {
   render();
-  requestAnimationFrame(fit);
+  requestAnimationFrame(home);
 }
 
 /** Redraws everything. */
@@ -314,7 +316,14 @@ function renderDragFrame() {
   updateEdgesFor(state.layers.edges, { graph, layout: state.layout }, state.drag.id);
 }
 
-/** Redraws the inspector and the difference panel. */
+/** Redraws the card beside the selected block. */
+function renderCard() {
+  renderTooltip(dom.tooltip, {
+    graph: currentGraph(), selection: state.selection, canvas: dom.wrap, svgRoot: dom.svg, actions: inspectorActions,
+  });
+}
+
+/** Redraws the inspector, the card and the difference panel. */
 function renderSidePanels() {
   const graph = currentGraph();
   const level = state.drill.at(-1);
@@ -323,6 +332,7 @@ function renderSidePanels() {
     ...problems(graph), isCollapsed, actions: inspectorActions,
     drill: state.drill, entry: level ? internalsFor(level.key, level.params) : null, level,
   });
+  renderCard();
   renderDiff();
 }
 
@@ -376,7 +386,7 @@ function toggleGroup(groupId) {
   collapsedFor().set(groupId, !isCollapsed(groupId));
   renderGraph();
   renderSidePanels();
-  fit();
+  home();
 }
 
 /** Switches to another preset, keeping the view so shared blocks stay in place. */
@@ -388,13 +398,14 @@ function selectPreset(id) {
   state.drill = [];
   saveSetting(storage, "preset", id);
   render({ animate: true });
-  requestAnimationFrame(fit);
+  requestAnimationFrame(home);
 }
 
 /** Applies the pan and zoom to the canvas and its grid. */
 function applyView() {
   const { x, y, scale } = state.view;
   state.layers.viewport.setAttribute("transform", `translate(${x} ${y}) scale(${scale})`);
+  placeTooltip(dom.tooltip, { selection: state.selection, canvas: dom.wrap, svgRoot: dom.svg });
   dom.wrap.style.backgroundPosition = `${x}px ${y}px`;
   dom.wrap.style.backgroundSize = `${100 * scale}px ${100 * scale}px, ${100 * scale}px ${100 * scale}px, ${GRID * scale}px ${GRID * scale}px, ${GRID * scale}px ${GRID * scale}px`;
 }
@@ -462,6 +473,13 @@ function zoomCentre(factor) {
 function fit() {
   const rect = dom.svg.getBoundingClientRect();
   state.view = fitToView(state.layout, rect.width, rect.height);
+  applyView();
+}
+
+/** Opens a diagram at full size, at the left of the row. */
+function home() {
+  const rect = dom.svg.getBoundingClientRect();
+  state.view = homeView(state.layout, rect.width, rect.height);
   applyView();
 }
 
@@ -683,7 +701,8 @@ function onCanvasKeyDown(event) {
     event.preventDefault();
     if (stepId) inspectorActions.select({ kind: "step", id: stepId });
     else inspectorActions.select(nodeId ? { kind: "node", id: nodeId } : { kind: "group", id: groupId });
-    dom.inspector.querySelector(".inspector-heading")?.focus();
+    const heading = dom.tooltip.querySelector(".tooltip-heading") ?? dom.inspector.querySelector(".inspector-heading");
+    heading?.focus();
     return;
   }
 
@@ -722,7 +741,7 @@ function onDocumentKeyDown(event) {
       return;
     }
     const sel = state.selection;
-    if (dom.inspector.contains(event.target) && sel && sel.kind !== "edge") {
+    if ((dom.inspector.contains(event.target) || dom.tooltip.contains(event.target)) && sel && sel.kind !== "edge") {
       const key = sel.kind === "step" ? `step:${sel.id}` : `${sel.kind}:${sel.id}`;
       dom.svg.querySelector(`[data-key="${CSS.escape(key)}"]`)?.focus();
       return;
@@ -801,7 +820,7 @@ async function onImportFile() {
   state.selection = null;
   state.drill = [];
   setHistory(commit(currentHistory(), { ...graph, basePreset: graph.basePreset ?? state.presetId }));
-  fit();
+  home();
   showStatus(`Imported ${graph.name}.`);
 }
 
@@ -852,11 +871,11 @@ function init() {
 
   wideQuery.addEventListener("change", () => {
     render();
-    requestAnimationFrame(fit);
+    requestAnimationFrame(home);
   });
 
   render();
-  requestAnimationFrame(fit);
+  requestAnimationFrame(home);
 }
 
 init();

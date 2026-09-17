@@ -4,10 +4,11 @@ An interactive blueprint of a language model. Each layer sits on one row, read
 left to right: norm, attention, add, norm, MLP, add. The residual stream x is one
 running vector: each sub-layer reads a normalised copy and adds its update back
 (`h = x + mixer(RMSNorm(x))`, then `x′ = h + MLP(RMSNorm(h))`), and `x′` goes on to
-the next layer. The stream is drawn as one thick green line: it runs in a lane
-above each sub-layer, drops into each adder and carries on, while the thin white
-branches show what each sub-layer reads and adds. A key in the corner says so,
-and connections never cross. Every block opens up: its steps, their tensor shapes, and the
+the next layer. The stream is the straight green line everything hangs off: each
+sub-layer sits in a band above it, reads a copy where the line is tapped, and
+drops its update into the ⊕ on the line. Labels under the line show what it
+carries so far — x, then x + attn, then x + attn + mlp. A key in the corner says
+so, and connections never cross. Every block opens up: its steps, their tensor shapes, and the
 equations behind them, each with a source link.
 
 Three read-only presets ship with it: Qwen2.5-0.5B, Qwen3-1.7B and Qwen3.5-0.8B.
@@ -31,10 +32,11 @@ and `just perf` need Google Chrome; set `SITE` or `CHROME` to point elsewhere.
 
 - Pick a preset in the top bar. Blocks the two models share move into place;
   the others fade in or out.
-- The diagram is one long row. Each view opens zoomed out to fit the whole
-  row, however small that makes it; scroll to zoom in, drag to pan, and press
-  **Fit** to see everything again.
-- Select a block to read its description, shapes, parameter count and sources.
+- The diagram is one long row. Each view opens at full size at the left of the
+  row; scroll to zoom, drag to pan, and press **Fit** to see the whole model.
+- Click a block and a card opens beside it with what it does, its shapes and its
+  size, plus a button to open its inside. Escape closes it. The inspector on the
+  right shows the same block with its sources and editable settings.
 - **+ on a block opens its inside**: the steps it is made of, with shapes and
   equations, also on one row; an arrow that has to pass a step goes over it.
   A step with its own **+** opens one level further, such as the delta-rule

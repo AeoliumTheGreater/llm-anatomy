@@ -142,7 +142,7 @@ await step("the model reads left to right", async () => {
   const sampling = await rect('[data-key="node:sampling"]');
   check("the stream runs left to right", embed.x < group.x && group.x < sampling.x, `${Math.round(embed.x)} < ${Math.round(group.x)} < ${Math.round(sampling.x)}`);
   check("blocks stay on one line", Math.abs(embed.cy - sampling.cy) < 4, `${Math.round(embed.cy)} vs ${Math.round(sampling.cy)}`);
-  check("the whole model fits on screen when it opens", await evaluate(allInsideCanvas(".layer-nodes > [data-key]")));
+  check("a view opens at full size", Math.abs((await rect('[data-key="node:embed"] .node-body')).w - 240) < 2, String((await rect('[data-key="node:embed"] .node-body')).w));
   check("every connection has an arrowhead", (await count(".edge")) === (await count(".edge-head")) && (await count(".edge")) > 0);
   check("the palette lists every block type", (await count(".palette-item")) === 15, String(await count(".palette-item")));
   await shot("01-collapsed");
@@ -156,25 +156,41 @@ await step("group expansion", async () => {
   const attn = await rect('[data-key="node:layer.attn"] .node-body');
   const mlp = await rect('[data-key="node:layer.mlp"] .node-body');
   const add = await rect('[data-key="node:layer.add1"] .node-body');
-  check("the whole layer sits on one row", Math.abs(attn.cy - add.cy) < 2 && Math.abs(mlp.cy - add.cy) < 2, `${Math.round(attn.cy)}, ${Math.round(add.cy)}, ${Math.round(mlp.cy)}`);
-  check("both skips are labelled", (await count(".edge-label")) === 2, String(await count(".edge-label")));
-  check("the lanes are named as the residual stream", (await text(".edge-label"))?.includes("residual stream"), await text(".edge-label"));
+  const add2 = await rect('[data-key="node:layer.add2"] .node-body');
+  check("the adders sit on the stream line", Math.abs(add.cy - add2.cy) < 2, `${Math.round(add.cy)} vs ${Math.round(add2.cy)}`);
+  check("the sub-layers sit above the stream", attn.cy < add.cy - 40 && mlp.cy < add.cy - 40, `${Math.round(attn.cy)}, ${Math.round(mlp.cy)} above ${Math.round(add.cy)}`);
+  check("the stream is labelled with what it carries", (await count(".edge-label")) >= 2, String(await count(".edge-label")));
+  check("the labels show the running total", await evaluate(`[...document.querySelectorAll('.edge-label')].some((t) => t.textContent === 'x + attn')`));
   check("the stream is drawn as its own line through both adders", (await count(".edge.is-stream")) === 3, String(await count(".edge.is-stream")));
   check("the key is shown on the model view", !(await evaluate("document.querySelector('.legend').hidden")));
   await clickIn("group:layer", "rect");
   check("the group explains how a layer adds to the stream", (await text(".inspector"))?.includes("x′ = h + MLP(RMSNorm(h))"), "");
   check("a dot marks where each skip leaves the line", (await count(".edge-junction")) >= 2, String(await count(".edge-junction")));
   check("the longest block title fits before its button", await evaluate(`document.querySelector('[data-key="node:layer.attn"] .node-title').getComputedTextLength() < 240 - 32 - 14 - 4`));
-  const skipLabel = await rect(".edge-label");
-  check("the skip lanes run above the row", skipLabel.cy < add.y, `${Math.round(skipLabel.cy)} < ${Math.round(add.y)}`);
-  // a close-up near full size, for judging how the stream reads
-  for (let i = 0; i < 6; i += 1) await evaluate("document.querySelector('[data-zoom=in]').click()");
-  await focusItem("node:layer.norm1");
+  const streamLabel = await rect(".edge-label");
+  check("the labels sit under the stream line", streamLabel.cy > add.cy, `${Math.round(streamLabel.cy)} > ${Math.round(add.cy)}`);
+  // full size, for judging how the stream reads
+  await focusItem("node:layer.add1");
   await shot("02-expanded-close");
   await evaluate("document.querySelector('[data-zoom=fit]').click()");
   await sleep(150);
   await focusItem("node:layer.attn");
   await shot("02-expanded");
+});
+
+await step("the card beside a block", async () => {
+  await clickIn("node:layer.attn", ".node-body");
+  check("clicking a block opens a card beside it", !(await evaluate("document.querySelector('.tooltip').hidden")));
+  check("the card names the block", (await text(".tooltip-heading")) === "Grouped-query attention", await text(".tooltip-heading"));
+  check("the card gives the shapes and size", (await text(".tooltip .facts"))?.includes("12.6M"), await text(".tooltip .facts"));
+  check("the card sits beside the block, not over it", await evaluate(`(() => {
+    const card = document.querySelector('.tooltip').getBoundingClientRect();
+    const block = document.querySelector('[data-key="node:layer.attn"] .node-body').getBoundingClientRect();
+    return card.left >= block.right || card.right <= block.left;
+  })()`));
+  await shot("03-card");
+  await key("Escape");
+  check("Escape closes the card", await evaluate("document.querySelector('.tooltip').hidden"));
 });
 
 await step("opening a block and a step inside it", async () => {
@@ -183,7 +199,6 @@ await step("opening a block and a step inside it", async () => {
   check("the key is hidden inside a block", await evaluate("document.querySelector('.legend').hidden"));
   check("Qwen3 attention has six steps", (await count(".node.is-step")) === 6, String(await count(".node.is-step")));
   check("the steps sit on one row", await evaluate(stepsOnOneRow));
-  check("the whole row fits on screen", await evaluate(allInsideCanvas(".node.is-step")));
   check("steps carry their equations", (await text('[data-key="step:weights"] .node-meta'))?.includes("softmax"), await text('[data-key="step:weights"] .node-meta'));
   await clickIn("step:weights", ".node-body");
   check("selecting a step explains it", (await text(".inspector .equation"))?.includes("softmax"), await text(".inspector .equation"));
@@ -288,10 +303,11 @@ await step("keyboard use", async () => {
   await key("ArrowRight");
   const second = await evaluate("document.activeElement.dataset.key");
   check("an arrow key moves focus along the stream", first !== second && Boolean(second), `${first} → ${second}`);
+  await focusItem("node:embed");
   await key("Enter");
-  check("Enter moves focus to the inspector heading", await evaluate("document.activeElement.classList.contains('inspector-heading')"));
+  check("Enter moves focus into the card", await evaluate("document.activeElement.classList.contains('tooltip-heading')"));
   await key("Escape");
-  check("Escape returns focus to the canvas", (await evaluate("document.activeElement.dataset.key")) === second);
+  check("Escape returns focus to the canvas", (await evaluate("document.activeElement.dataset.key")) === "node:embed");
   await evaluate(`document.querySelector('[data-key="node:embed"]').focus()`);
   await key("e");
   check("E opens the inside of the focused block", !(await evaluate("document.querySelector('.breadcrumb').hidden")));

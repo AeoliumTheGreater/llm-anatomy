@@ -1,3 +1,4 @@
+import { BLOCK_TYPES } from "../catalogue.js";
 import { sameEndpoint } from "../graph.js";
 import { portPoint } from "./canvas.js";
 import { svg } from "./dom.js";
@@ -51,9 +52,11 @@ export function routeEdge(from, to, obstacles = []) {
   const end = [to.x, to.y];
   const tapX = from.x + TAP * (from.nx || 1);
 
-  // a skip leaves the line at a tap, runs in a lane beside the blocks, and drops into the adder
+  // an update written into an adder from above drops straight in
   if (to.ny !== 0) {
     const lane = to.y + to.ny * LANE_RISE;
+    const beyondLane = to.ny === -1 ? from.y <= lane : from.y >= lane;
+    if (beyondLane) return tidy([start, [to.x, from.y], end]);
     return tidy([start, [tapX, from.y], [tapX, lane], [to.x, lane], end]);
   }
 
@@ -138,6 +141,29 @@ export function streamEdges(graph) {
   return stream;
 }
 
+/** Says what the stream carries as it leaves each block: x, then x + attn, and so on. */
+export function streamLabels(graph) {
+  const stream = [...streamEdges(graph)];
+  const types = new Map((graph.nodes ?? []).map((n) => [n.id, n.type]));
+  const leaving = (nodeId) => stream.find((i) => graph.edges[i].from.node === nodeId);
+  const labels = new Map();
+  const terms = [];
+
+  // walks the stream from the embedding, collecting what each adder has added
+  let index = stream.find((i) => types.get(graph.edges[i].from.node) !== "residualAdd");
+  const seen = new Set();
+  while (index !== undefined && !seen.has(index)) {
+    seen.add(index);
+    labels.set(graph.edges[index].from.node, terms.length > 3 ? "x + …" : ["x", ...terms].join(" + "));
+    const adder = graph.edges[index].to.node;
+    if (types.get(adder) !== "residualAdd") break;
+    const update = graph.edges.find((e) => e.to.node === adder && e.to.port === "b");
+    terms.push(BLOCK_TYPES[types.get(update?.from.node)]?.short ?? "update");
+    index = leaving(adder);
+  }
+  return labels;
+}
+
 /** Routes one edge, ignoring the boxes at its own two ends. */
 function routeOne(edge, layout, obstacles) {
   const from = portPoint(layout, edge.from, "outputs");
@@ -153,6 +179,15 @@ function routeOne(edge, layout, obstacles) {
 /** Routes every edge once; edges that would draw the same line are drawn once. */
 export function routesFor(graph, layout, obstacles = obstaclesFor(layout)) {
   const stream = streamEdges(graph);
+  const labels = streamLabels(graph);
+
+  // a stretch leaving a collapsed group carries everything that group added
+  const labelFor = (edge, route) => {
+    if (!route.from.hiddenIn) return labels.get(edge.from.node) ?? null;
+    const box = layout.groups.find((b) => b.group.id === route.from.hiddenIn);
+    return box ? `x + ${box.group.repeat} layers` : null;
+  };
+
   const routes = [];
   const byKey = new Map();
   graph.edges.forEach((edge, index) => {
@@ -162,10 +197,13 @@ export function routesFor(graph, layout, obstacles = obstaclesFor(layout)) {
     const existing = byKey.get(key);
     if (existing) {
       // a line shared with the stream is drawn as the stream
-      if (stream.has(index)) existing.stream = true;
+      if (stream.has(index)) {
+        existing.stream = true;
+        existing.label = existing.label ?? labelFor(edge, route);
+      }
       return;
     }
-    const entry = { ...route, index, edge, stream: stream.has(index) };
+    const entry = { ...route, index, edge, stream: stream.has(index), label: stream.has(index) ? labelFor(edge, route) : null };
     byKey.set(key, entry);
     routes.push(entry);
   });
@@ -191,17 +229,17 @@ function drawRoute(g, route, fanOut) {
   svg("path", { class: "edge-line", d }, g);
   svg("path", { class: "edge-head", d: arrowHead(points) }, g);
 
-  // marks where a skip leaves the stream, and names it
-  if (to.ny === 0 || points.length < 5) return;
-  if (fanOut.get(`${from.x},${from.y}`) > 1) {
+  // marks where a sub-layer reads the stream
+  if (points.length >= 3 && fanOut.get(`${from.x},${from.y}`) > 1) {
     svg("circle", { class: "edge-junction", cx: points[1][0], cy: points[1][1], r: 3.5 }, g);
   }
-  const [laneStart, laneEnd] = [points[2], points[3]];
-  if (Math.abs(laneEnd[0] - laneStart[0]) >= LABEL_MIN) {
-    svg("text", {
-      class: "edge-label", x: (laneStart[0] + laneEnd[0]) / 2, y: laneStart[1] - 7, "text-anchor": "middle",
-    }, g).textContent = "residual stream x";
-  }
+
+  // names what the stream carries along this stretch
+  const [head, tail] = [points[0], points.at(-1)];
+  if (!route.label || Math.abs(tail[0] - head[0]) < LABEL_MIN) return;
+  svg("text", {
+    class: "edge-label", x: (head[0] + tail[0]) / 2, y: head[1] + 22, "text-anchor": "middle",
+  }, g).textContent = route.label;
 }
 
 /** Counts how many drawn routes leave each output point. */

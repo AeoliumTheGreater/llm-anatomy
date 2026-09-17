@@ -82,6 +82,7 @@ export const BLOCK_TYPES = {
 
   attention: {
     name: "Grouped-query attention",
+    short: "attn",
     category: "sequence mixing",
     params: {
       d: { type: "int", default: 1024, label: "Width d" },
@@ -104,6 +105,7 @@ export const BLOCK_TYPES = {
 
   swiglu: {
     name: "SwiGLU MLP",
+    short: "mlp",
     category: "channel mixing",
     params: {
       d: { type: "int", default: 1024, label: "Width d" },
@@ -118,6 +120,7 @@ export const BLOCK_TYPES = {
 
   gatedDeltaNet: {
     name: "Gated DeltaNet",
+    short: "deltanet",
     category: "sequence mixing",
     params: {
       d: { type: "int", default: 1024, label: "Width d" },

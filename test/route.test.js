@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { layoutGraph, layoutInternals } from "../src/view/canvas.js";
-import { obstaclesFor, routeEdge, routesFor, streamEdges } from "../src/view/edges.js";
+import { obstaclesFor, routeEdge, routesFor, streamEdges, streamLabels } from "../src/view/edges.js";
 import { INTERNALS, internalsFor } from "../src/internals.js";
 import { PRESET as QWEN2_5 } from "../src/presets/qwen2_5_0_5b.js";
 import { PRESET as QWEN3 } from "../src/presets/qwen3_1_7b.js";
@@ -71,6 +71,28 @@ test("the residual stream runs from the embedding through every adder to the fin
     "layer.dn2.add2→layer.add1", "layer.add1→layer.add2",
     "layer.add2→finalNorm",
   ]);
+});
+
+test("the stream is drawn as straight lines at one height", () => {
+  const layout = layoutGraph(QWEN3, { collapsed: new Map([["layer", false]]), drag: null });
+  const stream = routesFor(QWEN3, layout).filter((r) => r.stream);
+  for (const route of stream) {
+    assert.equal(route.points.length, 2, `${route.edge.from.node}→${route.edge.to.node} is not straight`);
+    assert.equal(route.points[0][1], route.points[1][1]);
+  }
+  assert.equal(new Set(stream.map((r) => r.points[0][1])).size, 1, "the stream stays at one height");
+});
+
+test("a sub-layer above the stream writes into the adder with one elbow", () => {
+  assert.deepEqual(routeEdge(right(0, -94), top(600, 8)), [[0, -94], [600, -94], [600, 8]]);
+});
+
+test("the stream labels show the running total", () => {
+  const labels = streamLabels(QWEN3);
+  assert.equal(labels.get("embed"), "x");
+  assert.equal(labels.get("layer.add1"), "x + attn");
+  assert.equal(labels.get("layer.add2"), "x + attn + mlp");
+  assert.equal(streamLabels(QWEN3_5).get("layer.dn0.add2"), "x + deltanet + mlp");
 });
 
 test("a collapsed group still shows the stream passing through it", () => {

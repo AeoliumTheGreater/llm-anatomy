@@ -12,7 +12,6 @@ const ADD_R = 18;
 const PORT_R = 3.5;
 const GROUP_PAD = 24;
 const GROUP_HEADER = 30;
-const SKIP_SPACE = 60;
 const COLLAPSED_W = 300;
 const COLLAPSED_H = 72;
 const STEP_W = 280;
@@ -36,14 +35,17 @@ export function layoutGraph(graph, { collapsed, drag }) {
     if (members.length === 0) continue;
     const left = Math.min(...members.map((n) => n.position.x)) - GROUP_PAD;
     const right = Math.max(...members.map((n) => n.position.x + sizeOf(n).w)) + GROUP_PAD;
-    const rowTop = Math.min(...members.map((n) => n.position.y));
-    const top = rowTop - SKIP_SPACE - GROUP_HEADER;
+    const top = Math.min(...members.map((n) => n.position.y)) - GROUP_PAD - GROUP_HEADER;
     const bottom = Math.max(...members.map((n) => n.position.y + sizeOf(n).h)) + GROUP_PAD;
     const isCollapsed = collapsed.get(group.id) ?? group.collapsed;
+
+    // a collapsed group stands on the stream, where its adders are
+    const onStream = members.filter((n) => n.type === "residualAdd");
+    const streamTop = Math.min(...(onStream.length > 0 ? onStream : members).map((n) => n.position.y));
     groups.push({
       group, members, collapsed: isCollapsed,
       storedX: left, fullW: right - left, x: left,
-      y: isCollapsed ? rowTop + NODE_H / 2 - COLLAPSED_H / 2 : top,
+      y: isCollapsed ? streamTop + NODE_H / 2 - COLLAPSED_H / 2 : top,
       w: isCollapsed ? COLLAPSED_W : right - left,
       h: isCollapsed ? COLLAPSED_H : bottom - top,
     });
@@ -148,12 +150,12 @@ export function portPoint(layout, endpoint, direction) {
     return { x: box.x + (out ? box.w : 0), y: box.y + box.h / 2, nx: out ? 1 : -1, ny: 0, hiddenIn: box.group.id };
   }
 
-  // an adder takes the branch from the left and the skip from above
+  // an adder takes the stream from the left and the sub-layer's update from above
   if (item.node.type === "residualAdd") {
     const cx = item.x + item.w / 2;
     const cy = item.y + item.h / 2;
     if (out) return { x: cx + ADD_R, y: cy, nx: 1, ny: 0, hiddenIn: null };
-    if (endpoint.port === "a") return { x: cx, y: cy - ADD_R, nx: 0, ny: -1, hiddenIn: null };
+    if (endpoint.port === "b") return { x: cx, y: cy - ADD_R, nx: 0, ny: -1, hiddenIn: null };
     return { x: cx - ADD_R, y: cy, nx: -1, ny: 0, hiddenIn: null };
   }
 
@@ -182,12 +184,23 @@ function boundsOf(layout) {
     maxY = Math.max(maxY, y + h);
   };
   for (const item of layout.nodes.values()) {
-    if (item.hiddenBy) continue;
-    extend(item.x, item.y, item.w, item.h);
-    if (item.node.type === "residualAdd") extend(item.x, item.y - SKIP_SPACE, item.w, item.h);
+    if (!item.hiddenBy) extend(item.x, item.y, item.w, item.h);
   }
   for (const box of layout.groups) extend(box.x, box.y, box.w, box.h);
   return { minX, minY, maxX, maxY };
+}
+
+/** The view a diagram opens at: full size, at the left of the row. */
+export function homeView(layout, width, height) {
+  const { minX, minY, maxY } = boundsOf(layout);
+  if (!Number.isFinite(minX)) return { x: 0, y: 0, scale: 1 };
+  const margin = 40;
+  const spanY = maxY - minY;
+  return {
+    scale: 1,
+    x: margin - minX,
+    y: spanY > height - 2 * margin ? margin - minY : (height - spanY) / 2 - minY,
+  };
 }
 
 /** Computes the pan and zoom that fit every visible node and group into the given size. */
