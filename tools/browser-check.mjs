@@ -328,6 +328,22 @@ await step("import", async () => {
   check("an invalid import reports what and where", (await text(".status"))?.includes('nodes[0].type: unknown block type "warp"'), await text(".status"));
 });
 
+await step("folding the side panels away", async () => {
+  const wide = await rect(".canvas");
+  await click(".panel-tab-left");
+  check("hiding the palette gives the canvas its room", (await rect(".canvas")).w > wide.w + 150, `${Math.round(wide.w)} → ${Math.round((await rect(".canvas")).w)}`);
+  check("the palette is out of the way", (await evaluate("getComputedStyle(document.querySelector('.palette')).display")) === "none");
+  await click(".panel-tab-right");
+  check("hiding the inspector too widens it further", (await rect(".canvas")).w > wide.w + 450, String(Math.round((await rect(".canvas")).w)));
+  await shot("09-panels-folded");
+
+  await load();
+  check("the choice survives a reload", (await evaluate("getComputedStyle(document.querySelector('.inspector')).display")) === "none");
+  await click(".panel-tab-left");
+  await click(".panel-tab-right");
+  check("both panels come back", await evaluate("['.palette', '.inspector'].every((s) => getComputedStyle(document.querySelector(s)).display !== 'none')"));
+});
+
 await step("reduced motion", async () => {
   await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
   await click('.preset[data-preset="qwen2_5_0_5b"]');

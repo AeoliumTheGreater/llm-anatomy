@@ -52,11 +52,13 @@ const dom = {
 };
 
 const savedPreset = loadSetting(storage, "preset");
+const savedPanels = loadSetting(storage, "panels");
 const state = {
   presetId: PRESETS.some((p) => p.id === savedPreset) ? savedPreset : QWEN3.id,
   histories: new Map(),
   collapsed: new Map(),
   drill: [],
+  panels: { palette: savedPanels?.palette !== false, inspector: savedPanels?.inspector !== false },
   selection: null,
   view: { x: 0, y: 0, scale: 1 },
   diffOpen: false,
@@ -399,6 +401,26 @@ function selectPreset(id) {
   saveSetting(storage, "preset", id);
   render({ animate: true });
   requestAnimationFrame(home);
+}
+
+/** Shows or hides the side panels and updates their tabs. */
+function applyPanels() {
+  const names = { palette: "block palette", inspector: "inspector" };
+  for (const [name, open] of Object.entries(state.panels)) {
+    document.body.classList.toggle(`hide-${name}`, !open);
+    const tab = document.querySelector(`.panel-tab[data-panel="${name}"]`);
+    tab.setAttribute("aria-expanded", String(open));
+    tab.setAttribute("aria-label", `${open ? "Hide" : "Show"} the ${names[name]}`);
+    tab.textContent = (name === "palette") === open ? "‹" : "›";
+  }
+}
+
+/** Folds a side panel away, or brings it back. */
+function togglePanel(name) {
+  state.panels = { ...state.panels, [name]: !state.panels[name] };
+  saveSetting(storage, "panels", state.panels);
+  applyPanels();
+  applyView();
 }
 
 /** Applies the pan and zoom to the canvas and its grid. */
@@ -826,6 +848,7 @@ async function onImportFile() {
 
 /** Builds the static controls and wires up events. */
 function init() {
+  applyPanels();
   dom.presets.replaceChildren(...PRESETS.map((p) => h("button", {
     type: "button", class: "preset", "data-preset": p.id, "aria-pressed": "false", onClick: () => selectPreset(p.id),
   }, p.name)));
@@ -836,6 +859,9 @@ function init() {
     if (button) onAction(button.dataset.action);
   });
   dom.importInput.addEventListener("change", onImportFile);
+  for (const tab of document.querySelectorAll(".panel-tab")) {
+    tab.addEventListener("click", () => togglePanel(tab.dataset.panel));
+  }
   dom.zoom.addEventListener("click", (event) => {
     const zoom = event.target.closest("button")?.dataset.zoom;
     if (zoom === "in") zoomCentre(ZOOM_STEP);

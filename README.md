@@ -54,6 +54,9 @@ and `just perf` need Google Chrome; set `SITE` or `CHROME` to point elsewhere.
 - **Export** downloads the graph as JSON. **Import** checks a JSON file and
   lists each problem with its location.
 
+The tab on each edge of the canvas folds that side panel away and brings it
+back, and the choice is remembered.
+
 Below 800 px wide the palette is hidden, the inspector moves below the canvas
 and editing is turned off.
 

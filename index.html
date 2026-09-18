@@ -27,7 +27,7 @@
 
   <!-- palette, canvas and inspector -->
   <main class="workspace">
-    <aside class="palette" aria-label="Block palette"></aside>
+    <aside class="palette" id="palette" aria-label="Block palette"></aside>
     <div class="canvas-wrap">
       <svg class="canvas" role="application" aria-roledescription="graph editor"
            aria-label="Model diagram. Tab moves between blocks; Enter inspects a block; E opens the inside of one."></svg>
@@ -42,10 +42,14 @@
         <button type="button" data-zoom="out" aria-label="Zoom out">−</button>
         <button type="button" data-zoom="fit">Fit</button>
       </div>
+      <button type="button" class="panel-tab panel-tab-left" data-panel="palette"
+              aria-controls="palette" aria-expanded="true" aria-label="Hide the block palette">‹</button>
+      <button type="button" class="panel-tab panel-tab-right" data-panel="inspector"
+              aria-controls="inspector" aria-expanded="true" aria-label="Hide the inspector">›</button>
       <div class="tooltip" role="dialog" aria-label="Block details" hidden></div>
       <p class="status" role="status" aria-live="polite" hidden></p>
     </div>
-    <aside class="inspector" aria-label="Inspector"></aside>
+    <aside class="inspector" id="inspector" aria-label="Inspector"></aside>
   </main>
 
   <!-- difference panel -->

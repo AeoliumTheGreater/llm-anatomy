@@ -172,11 +172,57 @@ h3 {
   padding: 16px;
   background: var(--paper-deep);
 }
+/* each area keeps its own column, so hiding one does not shuffle the others along */
 .palette {
+  grid-column: 1;
   border-right: 1px solid var(--rule);
 }
+.canvas-wrap {
+  grid-column: 2;
+}
 .inspector {
+  grid-column: 3;
   border-left: 1px solid var(--rule);
+}
+
+/* either side panel can be folded away, giving the canvas the room */
+body.hide-palette .workspace {
+  grid-template-columns: 0 minmax(0, 1fr) 360px;
+}
+body.hide-inspector .workspace {
+  grid-template-columns: 220px minmax(0, 1fr) 0;
+}
+body.hide-palette.hide-inspector .workspace {
+  grid-template-columns: 0 minmax(0, 1fr) 0;
+}
+body.hide-palette .palette,
+body.hide-inspector .inspector {
+  display: none;
+}
+.panel-tab {
+  position: absolute;
+  top: 50%;
+  z-index: 7;
+  translate: 0 -50%;
+  padding: 16px 3px;
+  border: 1px solid var(--rule);
+  background: var(--paper-deep);
+  color: var(--ink-soft);
+  font-size: 15px;
+  line-height: 1;
+}
+.panel-tab:hover {
+  color: var(--ink);
+}
+.panel-tab-left {
+  left: 0;
+  border-left: 0;
+  border-radius: 0 3px 3px 0;
+}
+.panel-tab-right {
+  right: 0;
+  border-right: 0;
+  border-radius: 3px 0 0 3px;
 }
 
 /* canvas with its blueprint grid */
@@ -823,7 +869,12 @@ tr.is-missing td {
   .workspace {
     grid-template-columns: minmax(0, 1fr);
   }
-  .palette {
+  .canvas-wrap,
+  .inspector {
+    grid-column: auto;
+  }
+  .palette,
+  .panel-tab {
     display: none;
   }
   .canvas-wrap {
